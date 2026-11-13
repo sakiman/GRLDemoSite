@@ -263,6 +263,8 @@ p {
   display: grid;
   place-items: center;
   border-radius: 3px;
+  user-select: none;
+  touch-action: manipulation;
 }
 .wheel-controls svg {
   width: 14px;

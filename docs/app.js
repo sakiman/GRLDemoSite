@@ -181,12 +181,32 @@ document.querySelector('.mode-switch').addEventListener('click', (event) => {
   renderProductions();
 });
 const wheelDirection = (item) => (/previous/.test(item.className) ? -1 : /next/.test(item.className) ? 1 : 0);
+let holdTimer = 0;
+function stopHold() {
+  clearTimeout(holdTimer);
+  clearInterval(holdTimer);
+}
+function enableHoldShift(container, shiftBy) {
+  container.addEventListener('pointerdown', (event) => {
+    const button = event.target.closest('[data-shift]');
+    if (!button || event.button !== 0) return;
+    const direction = Number(button.dataset.shift);
+    const step = () => { shiftBy(direction); rollWheel(container, direction); };
+    stopHold();
+    step();
+    holdTimer = setTimeout(() => { step(); holdTimer = setInterval(step, 140); }, 400);
+  });
+}
+enableHoldShift(byId('category-picker'), shiftCategory);
+enableHoldShift(byId('production-list'), shiftProduction);
+['pointerup', 'pointercancel', 'blur'].forEach((type) => window.addEventListener(type, stopHold));
+// 滑鼠與觸控的上下按鈕已在 pointerdown 處理，click 只處理鍵盤（detail 為 0）
 byId('category-picker').addEventListener('click', (event) => {
   const category = event.target.closest('[data-category]');
   const shift = event.target.closest('[data-shift]');
   const direction = category ? wheelDirection(category) : Number(shift?.dataset.shift);
   if (category) chooseCategory(Number(category.dataset.category));
-  else if (shift) shiftCategory(direction);
+  else if (shift && !event.detail) shiftCategory(direction);
   else return;
   rollWheel(event.currentTarget, direction);
 });
@@ -195,7 +215,7 @@ byId('production-list').addEventListener('click', (event) => {
   const shift = event.target.closest('[data-shift]');
   const direction = production ? wheelDirection(production) : Number(shift?.dataset.shift);
   if (production) chooseProduction(Number(production.dataset.production));
-  else if (shift) shiftProduction(direction);
+  else if (shift && !event.detail) shiftProduction(direction);
   else return;
   rollWheel(event.currentTarget, direction);
 });
