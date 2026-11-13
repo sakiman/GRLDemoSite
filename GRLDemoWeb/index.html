@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f6f5">
+  <title>測試項目快速選取</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js" defer></script>
+  <script src="data.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark">G<span>.</span></span><span class="brand-name">TEST SELECTOR <small>快速選取</small></span></div>
+    <div class="topbar-right"><span class="status-dot"></span> SELECTION WORKSPACE</div>
+  </header>
+  <main class="workspace">
+    <div class="page-heading">
+      <div><div class="eyebrow">TEST CONFIGURATION <span>/</span> 01</div><h1>測試項目快速選取</h1><p>依分類與產品功能，找到需要的測試項目。</p></div>
+      <div class="mode-wrap"><span class="mode-label">選擇模式</span><div class="mode-switch" role="group" aria-label="選擇模式"><button type="button" class="mode-button active" data-mode="wheel" aria-pressed="true"><i data-lucide="disc-3"></i>圓柱</button><button type="button" class="mode-button" data-mode="list" aria-pressed="false"><i data-lucide="list"></i>列表</button></div></div>
+    </div>
+    <section class="favorites" aria-label="我的最愛"><span class="favorites-label"><i data-lucide="star"></i>我的最愛</span><div id="favorite-list" class="favorite-list"></div></section>
+    <section class="selector" aria-label="快速選取">
+      <div class="selector-top"><div><span class="section-kicker">QUICK SELECT</span><span class="selector-title">選擇測試項目</span></div><span class="step-hint">CATEGORY <b>→</b> PRODUCT FUNCTION <b>→</b> TEST ITEM</span></div>
+      <div class="columns">
+        <section class="column category-column"><div class="column-heading"><span class="step-number">01</span><div><h2>Category</h2><p>選擇分類</p></div><span id="category-count" class="count"></span></div><div class="item-toolbar"><label class="search"><i data-lucide="search"></i><input id="category-search" type="search" placeholder="搜尋分類" aria-label="搜尋分類"></label></div><div id="category-picker"></div></section>
+        <section class="column production-column"><div class="column-heading"><span class="step-number">02</span><div><h2>Product Function</h2><p>選擇產品功能</p></div><span id="production-count" class="count"></span></div><div class="item-toolbar"><label class="search"><i data-lucide="search"></i><input id="production-search" type="search" placeholder="搜尋產品功能" aria-label="搜尋產品功能"></label></div><div id="production-list" class="production-list"></div></section>
+        <section class="column item-column"><div class="column-heading"><span class="step-number">03</span><div><h2>Test Item</h2><p>勾選測試項目</p></div><span id="item-count" class="count"></span></div><div class="item-toolbar"><label class="search"><i data-lucide="search"></i><input id="item-search" type="search" placeholder="搜尋測試項目" aria-label="搜尋測試項目"></label><label class="select-all"><input id="select-all" type="checkbox"><span>全選此產品功能</span></label></div><div id="item-list" class="item-list"></div></section>
+      </div>
+      <div class="selector-footer"><div><span class="footer-dot"></span><span id="current-path">載入中</span></div><span>資料來源 <strong>data.js</strong></span></div>
+    </section>
+    <section class="selection-section" aria-labelledby="selection-title"><div class="selection-header"><div><div class="eyebrow">YOUR SELECTION</div><h2 id="selection-title">已選測試項目 <span id="selected-count">0</span></h2></div><div class="selection-actions"><button id="save-favorite" class="text-button" type="button" disabled><i data-lucide="star"></i>存為我的最愛</button><button id="clear-selection" class="text-button" type="button" disabled><i data-lucide="trash-2"></i>清除全部</button><button id="copy-selection" class="copy-button" type="button" disabled><i data-lucide="copy"></i>複製清單</button></div></div><form id="favorite-form" class="favorite-form" hidden><input id="favorite-name" type="text" maxlength="30" required placeholder="輸入最愛名稱" aria-label="最愛名稱"><button type="submit" class="copy-button">儲存</button><button type="button" id="favorite-cancel" class="text-button">取消</button></form><div id="selected-list" class="selected-list"></div></section>
+    <div id="message" class="message" role="status" aria-live="polite"></div>
+  </main>
+  <footer class="page-footer"><span>GRL <b>/</b> TEST CONFIGURATION</span><span>QUICK SELECTOR created by Sankalp Chang</span></footer>
+</body>
+</html>
