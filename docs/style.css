@@ -869,7 +869,7 @@ p {
     border-top: 1px solid var(--line);
   }
   .item-list {
-    max-height: 280px;
+    max-height: 450px;
   }
   .step-hint {
     display: none;
