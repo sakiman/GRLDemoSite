@@ -263,6 +263,60 @@ p {
   width: 14px;
   height: 14px;
 }
+.port-tab,
+.selected-group-name {
+  touch-action: none;
+}
+.port-tab .drag-grip,
+.selected-group-name .drag-grip {
+  width: 12px;
+  height: 12px;
+  margin: 0 -4px 0 -5px;
+  flex-shrink: 0;
+  color: inherit;
+  opacity: 0.45;
+  cursor: grab;
+}
+.port-tab.dragging,
+.selected-group.dragging {
+  opacity: 0.35;
+}
+.port-ghost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 1000;
+  margin: 0;
+  pointer-events: none;
+  opacity: 0.8;
+  box-shadow: 0 8px 22px #1c33293d;
+}
+.selected-group-name.port-ghost {
+  border-radius: 4px;
+  background: #eef3ef;
+}
+.port-tab.drop-before {
+  box-shadow: -4px 0 0 #d09157;
+}
+.port-tab.drop-after {
+  box-shadow: 4px 0 0 #d09157;
+}
+.selected-group.drop-before,
+.selected-group.drop-after {
+  position: relative;
+  z-index: 1;
+}
+.selected-group.drop-before {
+  box-shadow: 0 -3px 0 #d09157;
+}
+.selected-group.drop-after {
+  box-shadow: 0 3px 0 #d09157;
+}
+.port-dragging,
+.port-dragging * {
+  cursor: grabbing !important;
+  user-select: none;
+}
 .port-actions {
   display: flex;
   gap: 2px;

@@ -61,10 +61,13 @@ function refreshSelection(message = '') {
   if (notice) byId('message').textContent = notice;
 }
 
+const dragGrip = () => (state.ports.length > 1 ? '<i data-lucide="grip-vertical" class="drag-grip"></i>' : '');
+const dragHint = () => (state.ports.length > 1 ? '（可拖曳調整順序）' : '');
+
 function renderPorts() {
   byId('port-list').innerHTML = `${state.ports.map((port, index) => {
     const active = index === state.portIndex;
-    return `<button type="button" class="port-tab ${active ? 'active' : ''}" data-port="${index}" aria-pressed="${active}" title="${escapeHtml(port.name)}"><span>${escapeHtml(port.name)}</span><small>${port.selected.size}</small></button>`;
+    return `<button type="button" class="port-tab ${active ? 'active' : ''}" data-port="${index}" aria-pressed="${active}" title="${escapeHtml(port.name)}${dragHint()}">${dragGrip()}<span>${escapeHtml(port.name)}</span><small>${port.selected.size}</small></button>`;
   }).join('')}<button type="button" class="port-add" data-port-action="add"><i data-lucide="plus"></i>新增 Port</button>`;
   byId('port-delete').disabled = state.ports.length < 2;
   icons();
@@ -113,6 +116,83 @@ function deletePort() {
   closePortForm();
   closeFavoriteForm();
   refreshSelection(`已刪除 Port「${name}」`);
+}
+
+function movePort(from, to) {
+  const active = currentPort();
+  const [port] = state.ports.splice(from, 1);
+  state.ports.splice(to, 0, port);
+  state.portIndex = state.ports.indexOf(active);
+  refreshSelection(`已將「${port.name}」移到第 ${to + 1} 個位置`);
+}
+
+let portDrag = null;
+let suppressPortClick = false;
+const markPortDrop = (targets, from = -1, index = -1, after = false) => targets.forEach((target, position) => {
+  target.classList.toggle('dragging', position === from);
+  target.classList.toggle('drop-before', position === index && !after);
+  target.classList.toggle('drop-after', position === index && after);
+});
+
+function enablePortDrag(container, handleSelector, targetSelector, vertical) {
+  container.addEventListener('pointerdown', (event) => {
+    const handle = event.target.closest(handleSelector);
+    if (!handle || event.button !== 0 || state.ports.length < 2) return;
+    const rect = handle.getBoundingClientRect();
+    portDrag = { from: Number(handle.dataset.port), to: null, x: event.clientX, y: event.clientY, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top, handle, ghost: null, container, targetSelector, vertical, active: false };
+  });
+}
+
+// 跟著游標移動的半透明分身
+function createPortGhost(handle) {
+  const ghost = handle.cloneNode(true);
+  const { width, height } = handle.getBoundingClientRect();
+  ghost.classList.add('port-ghost');
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.style.width = `${width}px`;
+  ghost.style.height = `${height}px`;
+  document.body.append(ghost);
+  return ghost;
+}
+
+function trackPortDrag(event) {
+  if (!portDrag) return;
+  const { from, container, targetSelector, vertical } = portDrag;
+  // 移動超過一小段距離才算拖曳，否則仍視為點選
+  if (!portDrag.active && Math.hypot(event.clientX - portDrag.x, event.clientY - portDrag.y) < 6) return;
+  portDrag.active = true;
+  portDrag.ghost ??= createPortGhost(portDrag.handle);
+  portDrag.ghost.style.translate = `${event.clientX - portDrag.offsetX}px ${event.clientY - portDrag.offsetY}px`;
+  document.body.classList.add('port-dragging');
+  const targets = [...container.querySelectorAll(targetSelector)];
+  const target = document.elementFromPoint(event.clientX, event.clientY)?.closest(targetSelector);
+  const index = targets.indexOf(target);
+  if (index < 0) {
+    // 在分頁間的空隙維持原本的落點；移出範圍則取消
+    if (!container.contains(document.elementFromPoint(event.clientX, event.clientY))) {
+      portDrag.to = null;
+      markPortDrop(targets, from);
+    }
+    return;
+  }
+  const rect = target.getBoundingClientRect();
+  const after = vertical ? event.clientY > rect.top + rect.height / 2 : event.clientX > rect.left + rect.width / 2;
+  const slot = index + (after ? 1 : 0);
+  portDrag.to = slot === from || slot === from + 1 ? null : slot;
+  markPortDrop(targets, from, portDrag.to === null ? -1 : index, after);
+}
+
+function endPortDrag(event) {
+  if (!portDrag) return;
+  const { from, to, container, targetSelector, active, ghost } = portDrag;
+  portDrag = null;
+  if (!active) return;
+  ghost?.remove();
+  document.body.classList.remove('port-dragging');
+  markPortDrop([...container.querySelectorAll(targetSelector)]);
+  suppressPortClick = true;
+  setTimeout(() => { suppressPortClick = false; });
+  if (event.type === 'pointerup' && to !== null) movePort(from, to > from ? to - 1 : to);
 }
 
 function loadFavorites() {
@@ -248,7 +328,7 @@ function renderSelection() {
     const active = portIndex === state.portIndex;
     const name = escapeHtml(port.name);
     const rows = sortedSelection(port.selected).map(([key, value]) => `<div class="selected-row"><span class="selected-check"><i data-lucide="check"></i></span><span class="selected-path">${escapeHtml(value.category)} <b>/</b> ${escapeHtml(value.production)}</span><span class="selected-name">${escapeHtml(value.item)}</span><button type="button" class="remove-button" data-port="${portIndex}" data-key="${escapeHtml(key)}" title="移除 ${escapeHtml(value.item)}" aria-label="從 ${name} 移除 ${escapeHtml(value.item)}"><i data-lucide="x"></i></button></div>`).join('');
-    return `<section class="selected-group ${active ? 'active' : ''}"><div class="selected-group-header"><button type="button" class="selected-group-name" data-port="${portIndex}" aria-pressed="${active}" title="切換到「${name}」"><i data-lucide="plug"></i><span>${name}</span><small>${port.selected.size}</small></button><button type="button" class="text-button" data-clear-port="${portIndex}" ${port.selected.size ? '' : 'disabled'}>清除</button></div>${rows || '<div class="selected-group-empty">此 Port 尚未選取測試項目</div>'}</section>`;
+    return `<section class="selected-group ${active ? 'active' : ''}"><div class="selected-group-header"><button type="button" class="selected-group-name" data-port="${portIndex}" aria-pressed="${active}" title="切換到「${name}」${dragHint()}">${dragGrip()}<i data-lucide="plug"></i><span>${name}</span><small>${port.selected.size}</small></button><button type="button" class="text-button" data-clear-port="${portIndex}" ${port.selected.size ? '' : 'disabled'}>清除</button></div>${rows || '<div class="selected-group-empty">此 Port 尚未選取測試項目</div>'}</section>`;
   }).join('') : '<div class="empty-selection"><span class="empty-icon"><i data-lucide="list-checks"></i></span><div><strong>尚未選取測試項目</strong><p>選取的項目會顯示在這裡</p></div></div>';
   icons();
 }
@@ -366,6 +446,12 @@ byId('port-bar').addEventListener('click', (event) => {
   else if (action === 'delete') deletePort();
 });
 byId('port-cancel').addEventListener('click', closePortForm);
+enablePortDrag(byId('port-list'), '.port-tab', '.port-tab', false);
+enablePortDrag(byId('selected-list'), '.selected-group-name', '.selected-group', true);
+window.addEventListener('pointermove', trackPortDrag);
+['pointerup', 'pointercancel', 'blur'].forEach((type) => window.addEventListener(type, endPortDrag));
+// 拖曳放開後瀏覽器仍可能送出 click，避免被當成切換 Port
+window.addEventListener('click', (event) => { if (suppressPortClick) { suppressPortClick = false; event.stopPropagation(); event.preventDefault(); } }, true);
 byId('port-name').addEventListener('input', (event) => event.target.setCustomValidity(''));
 byId('port-form').addEventListener('submit', (event) => {
   event.preventDefault();
