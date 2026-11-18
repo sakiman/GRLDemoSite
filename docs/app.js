@@ -107,8 +107,7 @@ function duplicatePort() {
 
 function deletePort() {
   if (state.ports.length < 2) return;
-  const { name, selected } = currentPort();
-  if (selected.size && !window.confirm(`確定刪除 Port「${name}」？已勾選的 ${selected.size} 個測試項目會一併移除。`)) return;
+  const { name } = currentPort();
   state.ports.splice(state.portIndex, 1);
   state.portIndex = Math.min(state.portIndex, state.ports.length - 1);
   closePortForm();
