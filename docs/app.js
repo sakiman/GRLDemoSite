@@ -1,4 +1,4 @@
-const state = { categories: [], categoryIndex: 0, productionIndex: 0, mode: 'wheel', selected: new Map(), query: '', productionQuery: '', categoryQuery: '', favorites: [] };
+const state = { categories: [], categoryIndex: 0, productionIndex: 0, mode: 'wheel', ports: [{ name: 'Port 1', selected: new Map() }], portIndex: 0, query: '', productionQuery: '', categoryQuery: '', favorites: [], get selected() { return this.ports[this.portIndex].selected; } };
 const byId = (id) => document.getElementById(id);
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 const icons = () => window.lucide?.createIcons();
@@ -8,16 +8,117 @@ const compareNames = (a, b) => a.localeCompare(b, undefined, { numeric: true, se
 const wheelOrder = (entries, key) => (state.mode === 'wheel' ? entries.sort((a, b) => compareNames(a[key].name, b[key].name)) : entries);
 const visibleCategories = () => wheelOrder(state.categories.map((category, index) => ({ category, index })).filter(({ category }) => category.name.toLocaleLowerCase().includes(state.categoryQuery.toLocaleLowerCase())), 'category');
 const visibleProductions = () => wheelOrder((currentCategory()?.productions || []).map((production, index) => ({ production, index })).filter(({ production }) => production.name.toLocaleLowerCase().includes(state.productionQuery.toLocaleLowerCase())), 'production');
-const sortedSelection = () => [...state.selected.entries()].sort(([, a], [, b]) => compareNames(a.category, b.category) || compareNames(a.production, b.production) || compareNames(a.item, b.item));
+const sortedSelection = (selected = state.selected) => [...selected.entries()].sort(([, a], [, b]) => compareNames(a.category, b.category) || compareNames(a.production, b.production) || compareNames(a.item, b.item));
 const itemKey = (category, production, item) => JSON.stringify([category, production, item]);
 const FAVORITES_KEY = 'grl-test-selector-favorites';
 const entryKey = ({ category, production, item }) => itemKey(category, production, item);
 const itemExists = ({ category, production, item }) => Boolean(state.categories.find((entry) => entry.name === category)?.productions.find((entry) => entry.name === production)?.items.includes(item));
+const isEntry = (entry) => [entry?.category, entry?.production, entry?.item].every((value) => typeof value === 'string');
+const PORTS_KEY = 'grl-test-selector-ports';
+const MAX_PORT_BATCH = 20;
+const currentPort = () => state.ports[state.portIndex];
+const newPort = (name, entries = []) => ({ name, selected: new Map(entries.map(({ category, production, item }) => [itemKey(category, production, item), { category, production, item }])) });
+const portNameTaken = (name, skip = -1) => state.ports.some((port, index) => index !== skip && port.name === name);
+const totalSelected = () => state.ports.reduce((total, port) => total + port.selected.size, 0);
+
+function numberedPortNames(base, count) {
+  const names = [];
+  for (let number = portNameTaken(base) ? 2 : 1; names.length < count; number += 1) {
+    const name = `${base} ${number}`;
+    if (!portNameTaken(name)) names.push(name);
+  }
+  return names;
+}
+
+// 回傳已保存但目前資料中找不到的測試項目數量
+function loadPorts() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(PORTS_KEY) || 'null');
+    const ports = Array.isArray(stored?.ports) ? stored.ports.filter((port) => typeof port?.name === 'string' && port.name && Array.isArray(port.items) && port.items.every(isEntry)) : [];
+    if (!ports.length) return 0;
+    state.ports = ports.map((port) => newPort(port.name, port.items.filter(itemExists)));
+    state.portIndex = Number.isInteger(stored.active) && stored.active >= 0 && stored.active < ports.length ? stored.active : 0;
+    return ports.reduce((total, port) => total + port.items.length, 0) - totalSelected();
+  } catch {
+    return 0;
+  }
+}
+
+function savePorts() {
+  try {
+    localStorage.setItem(PORTS_KEY, JSON.stringify({ active: state.portIndex, ports: state.ports.map(({ name, selected }) => ({ name, items: [...selected.values()] })) }));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function refreshSelection(message = '') {
+  const notice = savePorts() ? message : '無法保存 Port 設定，重新整理後勾選內容將不會保留。';
+  renderPorts();
+  renderItems();
+  renderSelection();
+  if (notice) byId('message').textContent = notice;
+}
+
+function renderPorts() {
+  byId('port-list').innerHTML = `${state.ports.map((port, index) => {
+    const active = index === state.portIndex;
+    return `<button type="button" class="port-tab ${active ? 'active' : ''}" data-port="${index}" aria-pressed="${active}" title="${escapeHtml(port.name)}"><span>${escapeHtml(port.name)}</span><small>${port.selected.size}</small></button>`;
+  }).join('')}<button type="button" class="port-add" data-port-action="add"><i data-lucide="plus"></i>新增 Port</button>`;
+  byId('port-delete').disabled = state.ports.length < 2;
+  icons();
+}
+
+let portFormMode = 'add';
+function openPortForm(mode) {
+  const rename = mode === 'rename';
+  const input = byId('port-name');
+  portFormMode = mode;
+  byId('port-form').hidden = false;
+  byId('port-count-wrap').hidden = rename;
+  byId('port-count').value = 1;
+  byId('port-submit').textContent = rename ? '重新命名' : '新增';
+  input.setCustomValidity('');
+  input.value = rename ? currentPort().name : '';
+  input.focus();
+  input.select();
+}
+
+function closePortForm() {
+  byId('port-form').hidden = true;
+}
+
+function choosePort(index) {
+  state.portIndex = index;
+  closePortForm();
+  closeFavoriteForm();
+  refreshSelection();
+}
+
+function duplicatePort() {
+  const source = currentPort();
+  const [name] = numberedPortNames(source.name.replace(/\s+\d+$/, '') || source.name, 1);
+  state.ports.push(newPort(name, [...source.selected.values()]));
+  state.portIndex = state.ports.length - 1;
+  closePortForm();
+  refreshSelection(`已將「${source.name}」複製為「${name}」（${source.selected.size} 項）`);
+}
+
+function deletePort() {
+  if (state.ports.length < 2) return;
+  const { name, selected } = currentPort();
+  if (selected.size && !window.confirm(`確定刪除 Port「${name}」？已勾選的 ${selected.size} 個測試項目會一併移除。`)) return;
+  state.ports.splice(state.portIndex, 1);
+  state.portIndex = Math.min(state.portIndex, state.ports.length - 1);
+  closePortForm();
+  closeFavoriteForm();
+  refreshSelection(`已刪除 Port「${name}」`);
+}
 
 function loadFavorites() {
   try {
     const stored = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
-    const isEntry = (entry) => [entry?.category, entry?.production, entry?.item].every((value) => typeof value === 'string');
     return Array.isArray(stored) ? stored.filter((favorite) => typeof favorite?.name === 'string' && Array.isArray(favorite.items) && favorite.items.length && favorite.items.every(isEntry)) : [];
   } catch {
     return [];
@@ -49,10 +150,8 @@ function applyFavorite(favorite) {
   const available = favorite.items.filter(itemExists);
   const added = available.filter((entry) => !state.selected.has(entryKey(entry)));
   added.forEach(({ category, production, item }) => state.selected.set(itemKey(category, production, item), { category, production, item }));
-  renderItems();
-  renderSelection();
   const missing = favorite.items.length - available.length;
-  byId('message').textContent = `已帶入「${favorite.name}」：${added.length ? `新增 ${added.length} 項` : '項目都已在清單中'}${missing ? `，另有 ${missing} 項已不在資料中` : ''}`;
+  refreshSelection(`已將「${favorite.name}」帶入「${currentPort().name}」：${added.length ? `新增 ${added.length} 項` : '項目都已在清單中'}${missing ? `，另有 ${missing} 項已不在資料中` : ''}`);
 }
 
 function removeFavorite(index) {
@@ -133,23 +232,29 @@ function renderItems() {
   all.indeterminate = selectedCount > 0 && selectedCount < items.length;
   byId('item-search').disabled = !production;
   byId('item-list').innerHTML = visible.length ? visible.map((item) => `<label class="item-option"><input type="checkbox" data-item="${escapeHtml(item)}" ${state.selected.has(itemKey(category.name, production.name, item)) ? 'checked' : ''}><span>${escapeHtml(item)}</span><i data-lucide="check"></i></label>`).join('') : `<div class="empty-column">${items.length ? '找不到符合的測試項目' : '此產品功能沒有測試項目'}</div>`;
-  byId('current-path').textContent = [category?.name, production?.name].filter(Boolean).join('  /  ') || '尚無資料';
+  byId('current-path').textContent = category ? [currentPort().name, category.name, production?.name].filter(Boolean).join('  /  ') : '尚無資料';
+  byId('item-target').textContent = `勾選「${currentPort().name}」的測試項目`;
   icons();
 }
 
 function renderSelection() {
-  const selected = sortedSelection();
-  byId('selected-count').textContent = selected.length;
-  byId('clear-selection').disabled = !selected.length;
-  byId('copy-selection').disabled = !selected.length;
-  byId('save-favorite').disabled = !selected.length;
-  if (!selected.length) closeFavoriteForm();
+  const total = totalSelected();
+  byId('selected-count').textContent = total;
+  byId('clear-selection').disabled = !total;
+  byId('copy-selection').disabled = !total;
+  byId('save-favorite').disabled = !state.selected.size;
+  if (!state.selected.size) closeFavoriteForm();
   renderFavorites();
-  byId('selected-list').innerHTML = selected.length ? selected.map(([key, value]) => `<div class="selected-row"><span class="selected-check"><i data-lucide="check"></i></span><span class="selected-path">${escapeHtml(value.category)} <b>/</b> ${escapeHtml(value.production)}</span><span class="selected-name">${escapeHtml(value.item)}</span><button type="button" class="remove-button" data-key="${escapeHtml(key)}" title="移除 ${escapeHtml(value.item)}" aria-label="移除 ${escapeHtml(value.item)}"><i data-lucide="x"></i></button></div>`).join('') : '<div class="empty-selection"><span class="empty-icon"><i data-lucide="list-checks"></i></span><div><strong>尚未選取測試項目</strong><p>選取的項目會顯示在這裡</p></div></div>';
+  byId('selected-list').innerHTML = total ? state.ports.map((port, portIndex) => {
+    const active = portIndex === state.portIndex;
+    const name = escapeHtml(port.name);
+    const rows = sortedSelection(port.selected).map(([key, value]) => `<div class="selected-row"><span class="selected-check"><i data-lucide="check"></i></span><span class="selected-path">${escapeHtml(value.category)} <b>/</b> ${escapeHtml(value.production)}</span><span class="selected-name">${escapeHtml(value.item)}</span><button type="button" class="remove-button" data-port="${portIndex}" data-key="${escapeHtml(key)}" title="移除 ${escapeHtml(value.item)}" aria-label="從 ${name} 移除 ${escapeHtml(value.item)}"><i data-lucide="x"></i></button></div>`).join('');
+    return `<section class="selected-group ${active ? 'active' : ''}"><div class="selected-group-header"><button type="button" class="selected-group-name" data-port="${portIndex}" aria-pressed="${active}" title="切換到「${name}」"><i data-lucide="plug"></i><span>${name}</span><small>${port.selected.size}</small></button><button type="button" class="text-button" data-clear-port="${portIndex}" ${port.selected.size ? '' : 'disabled'}>清除</button></div>${rows || '<div class="selected-group-empty">此 Port 尚未選取測試項目</div>'}</section>`;
+  }).join('') : '<div class="empty-selection"><span class="empty-icon"><i data-lucide="list-checks"></i></span><div><strong>尚未選取測試項目</strong><p>選取的項目會顯示在這裡</p></div></div>';
   icons();
 }
 
-function render() { renderCategories(); renderProductions(); renderItems(); renderSelection(); }
+function render() { renderPorts(); renderCategories(); renderProductions(); renderItems(); renderSelection(); }
 function chooseCategory(index) { state.categoryIndex = index; state.query = ''; state.productionQuery = ''; state.productionIndex = visibleProductions()[0]?.index ?? 0; byId('item-search').value = ''; byId('production-search').value = ''; render(); }
 function shiftCategory(direction) {
   const visible = visibleCategories();
@@ -219,8 +324,8 @@ byId('production-list').addEventListener('click', (event) => {
   else return;
   rollWheel(event.currentTarget, direction);
 });
-byId('item-list').addEventListener('change', (event) => { if (event.target.matches('[data-item]')) { setItem(event.target.dataset.item, event.target.checked); renderItems(); renderSelection(); } });
-byId('select-all').addEventListener('change', (event) => { (currentProduction()?.items || []).forEach((item) => setItem(item, event.target.checked)); renderItems(); renderSelection(); });
+byId('item-list').addEventListener('change', (event) => { if (event.target.matches('[data-item]')) { setItem(event.target.dataset.item, event.target.checked); refreshSelection(); } });
+byId('select-all').addEventListener('change', (event) => { (currentProduction()?.items || []).forEach((item) => setItem(item, event.target.checked)); refreshSelection(); });
 byId('item-search').addEventListener('input', (event) => { state.query = event.target.value.trim(); renderItems(); });
 byId('category-search').addEventListener('input', (event) => {
   state.categoryQuery = event.target.value.trim();
@@ -234,12 +339,60 @@ byId('production-search').addEventListener('input', (event) => {
   if (visible.length && !visible.some(({ index }) => index === state.productionIndex)) chooseProduction(visible[0].index);
   else renderProductions();
 });
-byId('selected-list').addEventListener('click', (event) => { const button = event.target.closest('[data-key]'); if (button) { state.selected.delete(button.dataset.key); renderItems(); renderSelection(); } });
-byId('clear-selection').addEventListener('click', () => { state.selected.clear(); renderItems(); renderSelection(); });
+byId('selected-list').addEventListener('click', (event) => {
+  const remove = event.target.closest('[data-key]');
+  const clear = event.target.closest('[data-clear-port]');
+  const port = event.target.closest('[data-port]');
+  if (remove) { state.ports[Number(remove.dataset.port)].selected.delete(remove.dataset.key); refreshSelection(); }
+  else if (clear) { state.ports[Number(clear.dataset.clearPort)].selected.clear(); refreshSelection(); }
+  else if (port) choosePort(Number(port.dataset.port));
+});
+byId('clear-selection').addEventListener('click', () => {
+  const affected = state.ports.filter((port) => port.selected.size).length;
+  if (affected > 1 && !window.confirm(`確定清除 ${affected} 個 Port 的全部 ${totalSelected()} 個測試項目？`)) return;
+  state.ports.forEach((port) => port.selected.clear());
+  refreshSelection();
+});
 byId('copy-selection').addEventListener('click', async () => {
-  const text = sortedSelection().map(([, { category, production, item }]) => `${category}, ${production}, ${item}`).join('\n');
+  const text = state.ports.flatMap((port) => sortedSelection(port.selected).map(([, { category, production, item }]) => `${port.name}, ${category}, ${production}, ${item}`)).join('\n');
   try { await navigator.clipboard.writeText(text); byId('message').textContent = '已複製選取清單'; }
   catch { byId('message').textContent = '無法複製，請確認瀏覽器的剪貼簿權限。'; }
+});
+byId('port-bar').addEventListener('click', (event) => {
+  const tab = event.target.closest('[data-port]');
+  const action = event.target.closest('[data-port-action]')?.dataset.portAction;
+  if (tab) { choosePort(Number(tab.dataset.port)); byId('port-list').querySelector('[aria-pressed="true"]')?.focus(); }
+  else if (action === 'add' || action === 'rename') openPortForm(action);
+  else if (action === 'duplicate') duplicatePort();
+  else if (action === 'delete') deletePort();
+});
+byId('port-cancel').addEventListener('click', closePortForm);
+byId('port-name').addEventListener('input', (event) => event.target.setCustomValidity(''));
+byId('port-form').addEventListener('submit', (event) => {
+  event.preventDefault();
+  const input = byId('port-name');
+  const name = input.value.trim();
+  const rename = portFormMode === 'rename';
+  const count = rename ? 1 : Math.min(MAX_PORT_BATCH, Math.max(1, Math.trunc(Number(byId('port-count').value)) || 1));
+  const problem = !name ? '請輸入 Port 名稱' : count === 1 && portNameTaken(name, rename ? state.portIndex : -1) ? `已有名為「${name}」的 Port` : '';
+  if (problem) {
+    input.setCustomValidity(problem);
+    input.reportValidity();
+    return;
+  }
+  let message;
+  if (rename) {
+    currentPort().name = name;
+    message = `已將 Port 重新命名為「${name}」`;
+  } else {
+    const names = count === 1 ? [name] : numberedPortNames(name, count);
+    state.portIndex = state.ports.length;
+    state.ports.push(...names.map((portName) => newPort(portName)));
+    message = count === 1 ? `已新增 Port「${name}」` : `已新增 ${count} 個 Port：${names[0]} – ${names[count - 1]}`;
+  }
+  closePortForm();
+  closeFavoriteForm();
+  refreshSelection(message);
 });
 byId('save-favorite').addEventListener('click', () => { byId('favorite-form').hidden = false; byId('favorite-name').focus(); });
 byId('favorite-cancel').addEventListener('click', closeFavoriteForm);
@@ -268,7 +421,9 @@ function loadData() {
     if (!Array.isArray(data.categories) || !data.categories.every((category) => typeof category.name === 'string' && Array.isArray(category.productions) && category.productions.every((production) => typeof production.name === 'string' && Array.isArray(production.items) && production.items.every((item) => typeof item === 'string')))) throw new Error('Invalid data format');
     state.categories = data.categories;
     state.favorites = loadFavorites();
+    const missing = loadPorts();
     chooseCategory(visibleCategories()[0]?.index ?? 0);
+    if (missing) byId('message').textContent = `上次保存的勾選中有 ${missing} 項已不在資料中，已自動移除。`;
   } catch (error) {
     render();
     byId('message').textContent = '無法載入資料。請確認 data.js 存在且格式正確。';
