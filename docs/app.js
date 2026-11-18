@@ -18,7 +18,7 @@ const PORTS_KEY = 'grl-test-selector-ports';
 const MAX_PORT_BATCH = 20;
 const currentPort = () => state.ports[state.portIndex];
 const newPort = (name, entries = []) => ({ name, selected: new Map(entries.map(({ category, production, item }) => [itemKey(category, production, item), { category, production, item }])) });
-const portNameTaken = (name, skip = -1) => state.ports.some((port, index) => index !== skip && port.name === name);
+const portNameTaken = (name) => state.ports.some((port) => port.name === name);
 const totalSelected = () => state.ports.reduce((total, port) => total + port.selected.size, 0);
 
 function numberedPortNames(base, count) {
@@ -67,7 +67,7 @@ const dragHint = () => (state.ports.length > 1 ? '（可拖曳調整順序）' :
 function renderPorts() {
   byId('port-list').innerHTML = `${state.ports.map((port, index) => {
     const active = index === state.portIndex;
-    return `<button type="button" class="port-tab ${active ? 'active' : ''}" data-port="${index}" aria-pressed="${active}" title="${escapeHtml(port.name)}${dragHint()}">${dragGrip()}<span>${escapeHtml(port.name)}</span><small>${port.selected.size}</small></button>`;
+    return `<button type="button" class="port-tab ${active ? 'active' : ''}" data-port="${index}" aria-pressed="${active}" title="第 ${index + 1} 個 Port：${escapeHtml(port.name)}${dragHint()}">${dragGrip()}<b class="port-order">#${index + 1}</b><span>${escapeHtml(port.name)}</span><small>${port.selected.size}</small></button>`;
   }).join('')}<button type="button" class="port-add" data-port-action="add"><i data-lucide="plus"></i>新增 Port</button>`;
   byId('port-delete').disabled = state.ports.length < 2;
   icons();
@@ -328,7 +328,7 @@ function renderSelection() {
     const active = portIndex === state.portIndex;
     const name = escapeHtml(port.name);
     const rows = sortedSelection(port.selected).map(([key, value]) => `<div class="selected-row"><span class="selected-check"><i data-lucide="check"></i></span><span class="selected-path">${escapeHtml(value.category)} <b>/</b> ${escapeHtml(value.production)}</span><span class="selected-name">${escapeHtml(value.item)}</span><button type="button" class="remove-button" data-port="${portIndex}" data-key="${escapeHtml(key)}" title="移除 ${escapeHtml(value.item)}" aria-label="從 ${name} 移除 ${escapeHtml(value.item)}"><i data-lucide="x"></i></button></div>`).join('');
-    return `<section class="selected-group ${active ? 'active' : ''}"><div class="selected-group-header"><button type="button" class="selected-group-name" data-port="${portIndex}" aria-pressed="${active}" title="切換到「${name}」${dragHint()}">${dragGrip()}<i data-lucide="plug"></i><span>${name}</span><small>${port.selected.size}</small></button><button type="button" class="text-button" data-clear-port="${portIndex}" ${port.selected.size ? '' : 'disabled'}>清除</button></div>${rows || '<div class="selected-group-empty">此 Port 尚未選取測試項目</div>'}</section>`;
+    return `<section class="selected-group ${active ? 'active' : ''}"><div class="selected-group-header"><button type="button" class="selected-group-name" data-port="${portIndex}" aria-pressed="${active}" title="第 ${portIndex + 1} 個 Port：切換到「${name}」${dragHint()}">${dragGrip()}<b class="port-order">#${portIndex + 1}</b><i data-lucide="plug"></i><span>${name}</span><small>${port.selected.size}</small></button><button type="button" class="text-button" data-clear-port="${portIndex}" ${port.selected.size ? '' : 'disabled'}>清除</button></div>${rows || '<div class="selected-group-empty">此 Port 尚未選取測試項目</div>'}</section>`;
   }).join('') : '<div class="empty-selection"><span class="empty-icon"><i data-lucide="list-checks"></i></span><div><strong>尚未選取測試項目</strong><p>選取的項目會顯示在這裡</p></div></div>';
   icons();
 }
@@ -459,7 +459,7 @@ byId('port-form').addEventListener('submit', (event) => {
   const name = input.value.trim();
   const rename = portFormMode === 'rename';
   const count = rename ? 1 : Math.min(MAX_PORT_BATCH, Math.max(1, Math.trunc(Number(byId('port-count').value)) || 1));
-  const problem = !name ? '請輸入 Port 名稱' : count === 1 && portNameTaken(name, rename ? state.portIndex : -1) ? `已有名為「${name}」的 Port` : '';
+  const problem = name ? '' : '請輸入 Port 名稱';
   if (problem) {
     input.setCustomValidity(problem);
     input.reportValidity();

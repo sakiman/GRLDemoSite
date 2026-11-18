@@ -855,6 +855,23 @@ p {
   flex-shrink: 0;
   color: #6ca184;
 }
+.port-order {
+  flex-shrink: 0;
+  min-width: 26px;
+  padding: 1px 5px;
+  border: 1px solid #c9d6cd;
+  border-radius: 4px;
+  background: #fff;
+  color: #519378;
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.port-tab.active .port-order {
+  border-color: #fff;
+  color: #176a55;
+}
 .selected-group-empty {
   padding: 14px 12px;
   border-bottom: 1px solid #e0e9e2;
