@@ -384,6 +384,27 @@ function enableHoldShift(container, shiftBy) {
 enableHoldShift(byId('category-picker'), shiftCategory);
 enableHoldShift(byId('production-list'), shiftProduction);
 ['pointerup', 'pointercancel', 'blur'].forEach((type) => window.addEventListener(type, stopHold));
+// 觸控滑動圓柱：手指每滑過一格的距離就捲動一項（往上滑為下一項）
+const SWIPE_STEP = 34;
+let wheelSwipe = null;
+function enableSwipeShift(container, shiftBy) {
+  container.addEventListener('pointerdown', (event) => {
+    if (event.pointerType === 'mouse' || !event.target.closest('.wheel')) return;
+    wheelSwipe = { id: event.pointerId, y: event.clientY, container, shiftBy };
+  });
+}
+enableSwipeShift(byId('category-picker'), shiftCategory);
+enableSwipeShift(byId('production-list'), shiftProduction);
+window.addEventListener('pointermove', (event) => {
+  if (event.pointerId !== wheelSwipe?.id) return;
+  const steps = Math.trunc((wheelSwipe.y - event.clientY) / SWIPE_STEP);
+  if (!steps) return;
+  const direction = Math.sign(steps);
+  wheelSwipe.y -= steps * SWIPE_STEP;
+  for (let step = 0; step < Math.abs(steps); step += 1) wheelSwipe.shiftBy(direction);
+  rollWheel(wheelSwipe.container, direction);
+});
+['pointerup', 'pointercancel', 'blur'].forEach((type) => window.addEventListener(type, () => { wheelSwipe = null; }));
 // 滑鼠與觸控的上下按鈕已在 pointerdown 處理，click 只處理鍵盤（detail 為 0）
 byId('category-picker').addEventListener('click', (event) => {
   const category = event.target.closest('[data-category]');
