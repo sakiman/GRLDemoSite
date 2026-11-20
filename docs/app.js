@@ -275,11 +275,10 @@ function renderWheel(container, names, activeIndex, kind, noun, onShift, values 
   wheel.addEventListener('keydown', (event) => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); shift(event.key === 'ArrowDown' ? 1 : -1); container.querySelector('.wheel')?.focus(); } });
 }
 
-// 往下捲動時從最後一項繞回前面，下一次 rollWheel 會顯示提示虛影
+// 捲動後停在第一項時，下一次 rollWheel 會顯示提示分身
 let wheelWrapped = false;
 function noteWrap(visible, from, to, direction) {
-  const position = (target) => visible.findIndex(({ index }) => index === target);
-  if (direction > 0 && position(to) < position(from)) wheelWrapped = true;
+  wheelWrapped = Boolean(direction) && to !== from && visible[0]?.index === to;
 }
 
 function rollWheel(container, direction) {
