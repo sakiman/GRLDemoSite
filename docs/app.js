@@ -275,9 +275,32 @@ function renderWheel(container, names, activeIndex, kind, noun, onShift, values 
   wheel.addEventListener('keydown', (event) => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); shift(event.key === 'ArrowDown' ? 1 : -1); container.querySelector('.wheel')?.focus(); } });
 }
 
+// 往下捲動時從最後一項繞回前面，下一次 rollWheel 會顯示提示虛影
+let wheelWrapped = false;
+function noteWrap(visible, from, to, direction) {
+  const position = (target) => visible.findIndex(({ index }) => index === target);
+  if (direction > 0 && position(to) < position(from)) wheelWrapped = true;
+}
+
 function rollWheel(container, direction) {
   const wheel = container.querySelector('.wheel');
-  if (direction && wheel && wheel.children.length > 1) wheel.classList.add(direction > 0 ? 'roll-down' : 'roll-up');
+  const wrapped = wheelWrapped;
+  wheelWrapped = false;
+  if (!direction || !wheel || wheel.children.length < 2) return;
+  const center = wrapped ? wheel.querySelector('.center') : null;
+  // 先量測位置再加上滾動動畫，避免量到位移中的座標
+  const box = center?.getBoundingClientRect();
+  wheel.classList.add(direction > 0 ? 'roll-down' : 'roll-up');
+  if (!center) return;
+  // 分身掛在 body 上，才不會被圓柱外框裁切
+  const ghost = document.createElement('div');
+  ghost.className = 'wheel-ghost';
+  ghost.setAttribute('aria-hidden', 'true');
+  ghost.append(center.querySelector('span').cloneNode(true));
+  Object.assign(ghost.style, { left: `${box.left + window.scrollX}px`, top: `${box.top + window.scrollY}px`, width: `${box.width}px`, height: `${box.height}px` });
+  ghost.addEventListener('animationend', () => ghost.remove());
+  wheel.classList.add('wrapped');
+  document.body.append(ghost);
 }
 
 function renderProductions() {
@@ -339,14 +362,18 @@ function shiftCategory(direction) {
   const visible = visibleCategories();
   if (visible.length < 2) return;
   const position = Math.max(0, visible.findIndex(({ index }) => index === state.categoryIndex));
-  chooseCategory(visible[(position + direction + visible.length) % visible.length].index);
+  const target = visible[(position + direction + visible.length) % visible.length].index;
+  noteWrap(visible, state.categoryIndex, target, direction);
+  chooseCategory(target);
 }
 function chooseProduction(index) { state.productionIndex = index; state.query = ''; byId('item-search').value = ''; renderProductions(); renderItems(); }
 function shiftProduction(direction) {
   const visible = visibleProductions();
   if (visible.length < 2) return;
   const position = Math.max(0, visible.findIndex(({ index }) => index === state.productionIndex));
-  chooseProduction(visible[(position + direction + visible.length) % visible.length].index);
+  const target = visible[(position + direction + visible.length) % visible.length].index;
+  noteWrap(visible, state.productionIndex, target, direction);
+  chooseProduction(target);
 }
 function setItem(item, checked) {
   const category = currentCategory().name;
@@ -410,7 +437,7 @@ byId('category-picker').addEventListener('click', (event) => {
   const category = event.target.closest('[data-category]');
   const shift = event.target.closest('[data-shift]');
   const direction = category ? wheelDirection(category) : Number(shift?.dataset.shift);
-  if (category) chooseCategory(Number(category.dataset.category));
+  if (category) { noteWrap(visibleCategories(), state.categoryIndex, Number(category.dataset.category), direction); chooseCategory(Number(category.dataset.category)); }
   else if (shift && !event.detail) shiftCategory(direction);
   else return;
   rollWheel(event.currentTarget, direction);
@@ -419,7 +446,7 @@ byId('production-list').addEventListener('click', (event) => {
   const production = event.target.closest('[data-production]');
   const shift = event.target.closest('[data-shift]');
   const direction = production ? wheelDirection(production) : Number(shift?.dataset.shift);
-  if (production) chooseProduction(Number(production.dataset.production));
+  if (production) { noteWrap(visibleProductions(), state.productionIndex, Number(production.dataset.production), direction); chooseProduction(Number(production.dataset.production)); }
   else if (shift && !event.detail) shiftProduction(direction);
   else return;
   rollWheel(event.currentTarget, direction);
