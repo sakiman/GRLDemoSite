@@ -320,17 +320,23 @@ function renderProductions() {
   icons();
 }
 
+const visibleItems = () => (currentProduction()?.items || []).filter((item) => item.toLocaleLowerCase().includes(state.query.toLocaleLowerCase())).sort(compareNames);
+
 function renderItems() {
   const category = currentCategory();
   const production = currentProduction();
   const items = production?.items || [];
-  const visible = items.filter((item) => item.toLocaleLowerCase().includes(state.query.toLocaleLowerCase())).sort(compareNames);
-  const selectedCount = items.filter((item) => state.selected.has(itemKey(category.name, production.name, item))).length;
+  const visible = visibleItems();
+  const isSelected = (item) => state.selected.has(itemKey(category.name, production.name, item));
+  const selectedCount = items.filter(isSelected).length;
   byId('item-count').textContent = `${selectedCount} / ${items.length}`;
+  // 有搜尋文字時，全選只作用於篩選後的項目
+  const visibleSelected = visible.filter(isSelected).length;
   const all = byId('select-all');
-  all.disabled = !items.length;
-  all.checked = items.length > 0 && selectedCount === items.length;
-  all.indeterminate = selectedCount > 0 && selectedCount < items.length;
+  all.disabled = !visible.length;
+  all.checked = visible.length > 0 && visibleSelected === visible.length;
+  all.indeterminate = visibleSelected > 0 && visibleSelected < visible.length;
+  all.nextElementSibling.textContent = state.query ? `全選篩選結果（${visible.length} 項）` : '全選此產品功能';
   byId('item-search').disabled = !production;
   byId('item-list').innerHTML = visible.length ? visible.map((item) => `<label class="item-option"><input type="checkbox" data-item="${escapeHtml(item)}" ${state.selected.has(itemKey(category.name, production.name, item)) ? 'checked' : ''}><span>${escapeHtml(item)}</span><i data-lucide="check"></i></label>`).join('') : `<div class="empty-column">${items.length ? '找不到符合的測試項目' : '此產品功能沒有測試項目'}</div>`;
   byId('current-path').textContent = category ? [currentPort().name, category.name, production?.name].filter(Boolean).join('  /  ') : '尚無資料';
@@ -451,7 +457,7 @@ byId('production-list').addEventListener('click', (event) => {
   rollWheel(event.currentTarget, direction);
 });
 byId('item-list').addEventListener('change', (event) => { if (event.target.matches('[data-item]')) { setItem(event.target.dataset.item, event.target.checked); refreshSelection(); } });
-byId('select-all').addEventListener('change', (event) => { (currentProduction()?.items || []).forEach((item) => setItem(item, event.target.checked)); refreshSelection(); });
+byId('select-all').addEventListener('change', (event) => { visibleItems().forEach((item) => setItem(item, event.target.checked)); refreshSelection(); });
 byId('item-search').addEventListener('input', (event) => { state.query = event.target.value.trim(); renderItems(); });
 byId('category-search').addEventListener('input', (event) => {
   state.categoryQuery = event.target.value.trim();
