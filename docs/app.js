@@ -444,7 +444,12 @@ byId('selected-list').addEventListener('click', (event) => {
   const clear = event.target.closest('[data-clear-port]');
   const port = event.target.closest('[data-port]');
   if (remove) { state.ports[Number(remove.dataset.port)].selected.delete(remove.dataset.key); refreshSelection(); }
-  else if (clear) { state.ports[Number(clear.dataset.clearPort)].selected.clear(); refreshSelection(); }
+  else if (clear) {
+    state.portIndex = Number(clear.dataset.clearPort);
+    state.ports[state.portIndex].selected.clear();
+    refreshSelection();
+    byId('port-list').querySelector('.port-tab.active')?.focus();
+  }
   else if (port) choosePort(Number(port.dataset.port));
 });
 byId('clear-selection').addEventListener('click', () => {
