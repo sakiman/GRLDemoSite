@@ -385,7 +385,7 @@ enableHoldShift(byId('category-picker'), shiftCategory);
 enableHoldShift(byId('production-list'), shiftProduction);
 ['pointerup', 'pointercancel', 'blur'].forEach((type) => window.addEventListener(type, stopHold));
 // 觸控滑動圓柱：手指每滑過一格的距離就捲動一項（往上滑為下一項）
-const SWIPE_STEP = 34;
+const SWIPE_STEP = 24;
 let wheelSwipe = null;
 function enableSwipeShift(container, shiftBy) {
   container.addEventListener('pointerdown', (event) => {
