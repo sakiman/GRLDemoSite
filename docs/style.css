@@ -418,6 +418,7 @@ p {
   perspective: 800px;
   margin: 5px 0;
   overflow: hidden;
+  contain: paint;
   border-radius: 10px;
   box-shadow: inset 0 0 0 1px #c5d3ca;
   touch-action: pan-x pinch-zoom;
@@ -517,20 +518,9 @@ p {
 }
 .wheel.wheel-moving .wheel-item {
   animation: none;
-  height: 48px;
-  font-size: 16px;
-  transform: none;
-  translate: 0 var(--wheel-offset, 0px);
 }
-.wheel.wheel-moving .outer-previous { top: -65px; }
-.wheel.wheel-moving .far-previous { top: -13px; }
-.wheel.wheel-moving .previous { top: 39px; }
-.wheel.wheel-moving .center { top: 91px; }
-.wheel.wheel-moving .next { top: 143px; }
-.wheel.wheel-moving .far-next { top: 195px; }
-.wheel.wheel-moving .outer-next { top: 247px; }
 .wheel.wheel-moving.snapping .wheel-item {
-  transition: translate 0.16s ease-out;
+  transition: top 0.16s ease-out, height 0.16s ease-out, font-size 0.16s ease-out, transform 0.16s ease-out, opacity 0.16s ease-out;
 }
 @keyframes roll-down {
   from {

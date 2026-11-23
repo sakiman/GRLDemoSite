@@ -426,8 +426,8 @@ const WHEEL_SNAP_DURATION = 160;
 let wheelGesture = null;
 let suppressWheelClick = false;
 
-function previewWheel(gesture) {
-  const { wheel, names, activeIndex, kind, values, distance } = gesture;
+function previewWheel(gesture, distance = gesture.distance) {
+  const { wheel, names, activeIndex, kind, values } = gesture;
   const step = Math.round(distance / WHEEL_STEP);
   const center = ((activeIndex + step) % names.length + names.length) % names.length;
   const positions = ['outer-previous', 'far-previous', 'previous', 'center', 'next', 'far-next', 'outer-next'];
@@ -439,7 +439,26 @@ function previewWheel(gesture) {
     }).join('');
     gesture.previewCenter = center;
   }
-  wheel.style.setProperty('--wheel-offset', `${step * WHEEL_STEP - distance}px`);
+  // 與靜止時的圓柱位置一致，避免回正後跳動
+  const tops = [-53, -1, 43, 91, 143, 189, 235];
+  const heights = [42, 42, 44, 48, 44, 42, 42];
+  const interpolate = (values, position) => {
+    const lower = Math.max(0, Math.min(5, Math.floor(position + 3)));
+    const fraction = Math.max(0, Math.min(1, position + 3 - lower));
+    return values[lower] + (values[lower + 1] - values[lower]) * fraction;
+  };
+  wheel.querySelectorAll('.wheel-item').forEach((item, slot) => {
+    const position = slot - 3 + step - distance / WHEEL_STEP;
+    const magnitude = Math.min(3, Math.abs(position));
+    Object.assign(item.style, {
+      top: `${interpolate(tops, position)}px`,
+      height: `${interpolate(heights, position)}px`,
+      fontSize: `${16 - Math.min(1, Math.max(0, magnitude - 1))}px`,
+      transform: `rotateX(${-9 * position}deg) scale(${1 - 0.03 * magnitude})`,
+      transformOrigin: position < 0 ? 'bottom' : position > 0 ? 'top' : 'center',
+      opacity: '',
+    });
+  });
 }
 
 function finishWheelGesture(cancel = false) {
@@ -465,7 +484,12 @@ function finishWheelGesture(cancel = false) {
     return;
   }
   gesture.wheel.classList.add('snapping');
-  gesture.wheel.style.setProperty('--wheel-offset', '0px');
+  previewWheel(gesture, step * WHEEL_STEP);
+  const visible = Math.min(5, gesture.names.length);
+  const before = visible - 1 - Math.floor((visible - 1) / 2);
+  gesture.wheel.querySelectorAll('.wheel-item').forEach((item, slot) => {
+    if (slot - 3 < -before || slot - 3 >= visible - before) item.style.opacity = '0';
+  });
   gesture.snapping = true;
   gesture.timer = setTimeout(commit, WHEEL_SNAP_DURATION);
 }
