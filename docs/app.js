@@ -265,7 +265,7 @@ function renderCategories() {
 function renderWheel(container, names, activeIndex, kind, noun, onShift, values = names.map((_, index) => index)) {
   const positions = ['far-previous', 'previous', 'center', 'next', 'far-next'];
   const visible = Math.min(positions.length, names.length);
-  const before = visible - 1 - Math.floor((visible - 1) / 2);
+  const before = names.length === 2 ? activeIndex : visible - 1 - Math.floor((visible - 1) / 2);
   const wheelItem = (offset) => { const index = (activeIndex + offset + names.length) % names.length; return `<button type="button" class="wheel-item ${positions[offset + 2]}" data-${kind}="${values[index]}" ${offset === 0 ? 'aria-current="true"' : ''}><span>${escapeHtml(names[index])}</span>${offset === 0 ? '<i data-lucide="arrow-right"></i>' : ''}</button>`; };
   const items = Array.from({ length: visible }, (_, position) => wheelItem(position - before)).join('');
   container.innerHTML = `<div class="wheel-controls"><span>${noun}瀏覽</span><div><button type="button" data-shift="-1" title="上一個${noun}" aria-label="上一個${noun}"><i data-lucide="chevron-up"></i></button><button type="button" data-shift="1" title="下一個${noun}" aria-label="下一個${noun}"><i data-lucide="chevron-down"></i></button></div></div><div class="wheel" tabindex="0" aria-label="${noun}選擇器，可使用上下方向鍵">${items}</div><div class="wheel-caption"><span>SCROLL TO EXPLORE</span><span>${String(activeIndex + 1).padStart(2, '0')} / ${String(names.length).padStart(2, '0')}</span></div>`;
@@ -426,16 +426,21 @@ const WHEEL_SNAP_DURATION = 160;
 let wheelGesture = null;
 let suppressWheelClick = false;
 
+function wheelDistance(gesture, distance) {
+  if (gesture.names.length !== 2) return distance;
+  return Math.max(-gesture.activeIndex * WHEEL_STEP, Math.min((1 - gesture.activeIndex) * WHEEL_STEP, distance));
+}
+
 function previewWheel(gesture, distance = gesture.distance) {
   const { wheel, names, activeIndex, kind, values } = gesture;
   const step = Math.round(distance / WHEEL_STEP);
   const center = ((activeIndex + step) % names.length + names.length) % names.length;
   const positions = ['outer-previous', 'far-previous', 'previous', 'center', 'next', 'far-next', 'outer-next'];
   if (gesture.previewCenter !== center) {
-    wheel.innerHTML = positions.map((position, slot) => {
-      const offset = slot - 3;
+    const offsets = names.length === 2 ? names.map((_, index) => index - center) : positions.map((_, slot) => slot - 3);
+    wheel.innerHTML = offsets.map((offset) => {
       const index = ((center + offset) % names.length + names.length) % names.length;
-      return `<button type="button" class="wheel-item ${position}" data-${kind}="${values[index]}"><span>${escapeHtml(names[index])}</span></button>`;
+      return `<button type="button" class="wheel-item ${positions[offset + 3]}" data-wheel-offset="${offset}" data-${kind}="${values[index]}"><span>${escapeHtml(names[index])}</span></button>`;
     }).join('');
     gesture.previewCenter = center;
   }
@@ -447,8 +452,8 @@ function previewWheel(gesture, distance = gesture.distance) {
     const fraction = Math.max(0, Math.min(1, position + 3 - lower));
     return values[lower] + (values[lower + 1] - values[lower]) * fraction;
   };
-  wheel.querySelectorAll('.wheel-item').forEach((item, slot) => {
-    const position = slot - 3 + step - distance / WHEEL_STEP;
+  wheel.querySelectorAll('.wheel-item').forEach((item) => {
+    const position = Number(item.dataset.wheelOffset) + step - distance / WHEEL_STEP;
     const magnitude = Math.min(3, Math.abs(position));
     Object.assign(item.style, {
       top: `${interpolate(tops, position)}px`,
@@ -486,9 +491,10 @@ function finishWheelGesture(cancel = false) {
   gesture.wheel.classList.add('snapping');
   previewWheel(gesture, step * WHEEL_STEP);
   const visible = Math.min(5, gesture.names.length);
-  const before = visible - 1 - Math.floor((visible - 1) / 2);
-  gesture.wheel.querySelectorAll('.wheel-item').forEach((item, slot) => {
-    if (slot - 3 < -before || slot - 3 >= visible - before) item.style.opacity = '0';
+  const before = gesture.names.length === 2 ? target : visible - 1 - Math.floor((visible - 1) / 2);
+  gesture.wheel.querySelectorAll('.wheel-item').forEach((item) => {
+    const offset = Number(item.dataset.wheelOffset);
+    if (offset < -before || offset >= visible - before) item.style.opacity = '0';
   });
   gesture.snapping = true;
   gesture.timer = setTimeout(commit, WHEEL_SNAP_DURATION);
@@ -514,7 +520,7 @@ function moveWheelByScroll(container, wheel, names, activeIndex, kind, values, d
     gesture.wheel.classList.remove('snapping');
     gesture.snapping = false;
   }
-  gesture.distance += distance;
+  gesture.distance = wheelDistance(gesture, gesture.distance + distance);
   previewWheel(gesture);
   gesture.timer = setTimeout(() => finishWheelGesture(), 120);
 }
@@ -546,7 +552,7 @@ window.addEventListener('pointermove', (event) => {
   const gesture = wheelGesture;
   if (!gesture || event.pointerId !== gesture.pointerId || !gesture.wheel.isConnected) return;
   const movement = gesture.startY - event.clientY;
-  gesture.distance = gesture.baseDistance + movement;
+  gesture.distance = wheelDistance(gesture, gesture.baseDistance + movement);
   if (!gesture.moved && Math.abs(movement) < 4) return;
   if (!gesture.moved && event.isTrusted) gesture.wheel.setPointerCapture(event.pointerId);
   gesture.moved = true;
