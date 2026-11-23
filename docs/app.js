@@ -271,7 +271,12 @@ function renderWheel(container, names, activeIndex, kind, noun, onShift, values 
   container.innerHTML = `<div class="wheel-controls"><span>${noun}瀏覽</span><div><button type="button" data-shift="-1" title="上一個${noun}" aria-label="上一個${noun}"><i data-lucide="chevron-up"></i></button><button type="button" data-shift="1" title="下一個${noun}" aria-label="下一個${noun}"><i data-lucide="chevron-down"></i></button></div></div><div class="wheel" tabindex="0" aria-label="${noun}選擇器，可使用上下方向鍵">${items}</div><div class="wheel-caption"><span>SCROLL TO EXPLORE</span><span>${String(activeIndex + 1).padStart(2, '0')} / ${String(names.length).padStart(2, '0')}</span></div>`;
   const wheel = container.querySelector('.wheel');
   const shift = (direction) => { onShift(direction); rollWheel(container, direction); };
-  wheel.addEventListener('wheel', (event) => { if (!event.deltaY) return; event.preventDefault(); shift(event.deltaY > 0 ? 1 : -1); }, { passive: false });
+  wheel.addEventListener('wheel', (event) => {
+    if (!event.deltaY || names.length < 2) return;
+    event.preventDefault();
+    const distance = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? wheel.clientHeight : 1);
+    moveWheelByScroll(container, wheel, names, activeIndex, kind, values, distance);
+  }, { passive: false });
   wheel.addEventListener('keydown', (event) => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); shift(event.key === 'ArrowDown' ? 1 : -1); container.querySelector('.wheel')?.focus(); } });
 }
 
@@ -416,27 +421,133 @@ function enableHoldShift(container, shiftBy) {
 enableHoldShift(byId('category-picker'), shiftCategory);
 enableHoldShift(byId('production-list'), shiftProduction);
 ['pointerup', 'pointercancel', 'blur'].forEach((type) => window.addEventListener(type, stopHold));
-// 觸控滑動圓柱：手指每滑過一格的距離就捲動一項（往上滑為下一項）
-const SWIPE_STEP = 24;
-let wheelSwipe = null;
-function enableSwipeShift(container, shiftBy) {
+const WHEEL_STEP = 52;
+const WHEEL_SNAP_DURATION = 160;
+let wheelGesture = null;
+let suppressWheelClick = false;
+
+function previewWheel(gesture) {
+  const { wheel, names, activeIndex, kind, values, distance } = gesture;
+  const step = Math.round(distance / WHEEL_STEP);
+  const center = ((activeIndex + step) % names.length + names.length) % names.length;
+  const positions = ['outer-previous', 'far-previous', 'previous', 'center', 'next', 'far-next', 'outer-next'];
+  if (gesture.previewCenter !== center) {
+    wheel.innerHTML = positions.map((position, slot) => {
+      const offset = slot - 3;
+      const index = ((center + offset) % names.length + names.length) % names.length;
+      return `<button type="button" class="wheel-item ${position}" data-${kind}="${values[index]}"><span>${escapeHtml(names[index])}</span></button>`;
+    }).join('');
+    gesture.previewCenter = center;
+  }
+  wheel.style.setProperty('--wheel-offset', `${step * WHEEL_STEP - distance}px`);
+}
+
+function finishWheelGesture(cancel = false) {
+  const gesture = wheelGesture;
+  if (!gesture) return;
+  clearTimeout(gesture.timer);
+  if (!gesture.wheel.isConnected) { wheelGesture = null; return; }
+  const step = cancel ? 0 : Math.round(gesture.distance / WHEEL_STEP);
+  const target = ((gesture.activeIndex + step) % gesture.names.length + gesture.names.length) % gesture.names.length;
+  const focused = document.activeElement === gesture.wheel;
+  const commit = () => {
+    if (wheelGesture === gesture) wheelGesture = null;
+    if (!gesture.wheel.isConnected) return;
+    if (target !== gesture.activeIndex) {
+      if (gesture.kind === 'category') chooseCategory(gesture.values[target]);
+      else chooseProduction(gesture.values[target]);
+    } else if (gesture.kind === 'category') renderCategories();
+    else renderProductions();
+    if (focused) gesture.container.querySelector('.wheel')?.focus();
+  };
+  if (cancel) {
+    commit();
+    return;
+  }
+  gesture.wheel.classList.add('snapping');
+  gesture.wheel.style.setProperty('--wheel-offset', '0px');
+  gesture.snapping = true;
+  gesture.timer = setTimeout(commit, WHEEL_SNAP_DURATION);
+}
+
+function startWheelGesture(container, wheel, names, activeIndex, kind, values) {
+  if (wheelGesture) finishWheelGesture();
+  wheel.classList.remove('roll-up', 'roll-down', 'wrapped');
+  wheel.classList.add('wheel-moving');
+  wheelGesture = { container, wheel, names, activeIndex, kind, values, distance: 0, previewCenter: null };
+  return wheelGesture;
+}
+
+function moveWheelByScroll(container, wheel, names, activeIndex, kind, values, distance) {
+  if (wheelGesture && (wheelGesture.wheel !== wheel || wheelGesture.pointerId !== undefined)) {
+    finishWheelGesture();
+    wheelGesture = null;
+  }
+  const gesture = wheelGesture || startWheelGesture(container, wheel, names, activeIndex, kind, values);
+  clearTimeout(gesture.timer);
+  if (gesture.snapping) {
+    gesture.distance = Math.round(gesture.distance / WHEEL_STEP) * WHEEL_STEP;
+    gesture.wheel.classList.remove('snapping');
+    gesture.snapping = false;
+  }
+  gesture.distance += distance;
+  previewWheel(gesture);
+  gesture.timer = setTimeout(() => finishWheelGesture(), 120);
+}
+
+function enableSwipeShift(container, getEntries, getActiveIndex, kind) {
   container.addEventListener('pointerdown', (event) => {
-    if (event.pointerType === 'mouse' || !event.target.closest('.wheel')) return;
-    wheelSwipe = { id: event.pointerId, y: event.clientY, container, shiftBy };
+    const wheel = event.target.closest('.wheel');
+    const entries = getEntries();
+    if (!wheel || event.button !== 0 || entries.length < 2) return;
+    if (wheelGesture && wheelGesture.wheel !== wheel) {
+      finishWheelGesture();
+      wheelGesture = null;
+    }
+    if (wheelGesture) {
+      if (wheelGesture.pointerId !== undefined) return;
+      clearTimeout(wheelGesture.timer);
+      if (wheelGesture.snapping) wheelGesture.distance = Math.round(wheelGesture.distance / WHEEL_STEP) * WHEEL_STEP;
+      wheelGesture.wheel.classList.remove('snapping');
+      Object.assign(wheelGesture, { snapping: false, pointerId: event.pointerId, startY: event.clientY, baseDistance: wheelGesture.distance, moved: false });
+      return;
+    }
+    const activeIndex = Math.max(0, entries.findIndex(({ index }) => index === getActiveIndex()));
+    wheelGesture = { container, wheel, names: entries.map((entry) => entry[kind].name), activeIndex, kind, values: entries.map(({ index }) => index), distance: 0, previewCenter: null, pointerId: event.pointerId, startY: event.clientY, baseDistance: 0, moved: false };
   });
 }
-enableSwipeShift(byId('category-picker'), shiftCategory);
-enableSwipeShift(byId('production-list'), shiftProduction);
+enableSwipeShift(byId('category-picker'), visibleCategories, () => state.categoryIndex, 'category');
+enableSwipeShift(byId('production-list'), visibleProductions, () => state.productionIndex, 'production');
 window.addEventListener('pointermove', (event) => {
-  if (event.pointerId !== wheelSwipe?.id) return;
-  const steps = Math.trunc((wheelSwipe.y - event.clientY) / SWIPE_STEP);
-  if (!steps) return;
-  const direction = Math.sign(steps);
-  wheelSwipe.y -= steps * SWIPE_STEP;
-  for (let step = 0; step < Math.abs(steps); step += 1) wheelSwipe.shiftBy(direction);
-  rollWheel(wheelSwipe.container, direction);
+  const gesture = wheelGesture;
+  if (!gesture || event.pointerId !== gesture.pointerId || !gesture.wheel.isConnected) return;
+  const movement = gesture.startY - event.clientY;
+  gesture.distance = gesture.baseDistance + movement;
+  if (!gesture.moved && Math.abs(movement) < 4) return;
+  if (!gesture.moved && event.isTrusted) gesture.wheel.setPointerCapture(event.pointerId);
+  gesture.moved = true;
+  gesture.wheel.classList.remove('roll-up', 'roll-down', 'wrapped');
+  gesture.wheel.classList.add('wheel-moving');
+  previewWheel(gesture);
 });
-['pointerup', 'pointercancel', 'blur'].forEach((type) => window.addEventListener(type, () => { wheelSwipe = null; }));
+['pointerup', 'pointercancel', 'blur'].forEach((type) => window.addEventListener(type, (event) => {
+  const gesture = wheelGesture;
+  if (!gesture || gesture.pointerId === undefined || (type !== 'blur' && event.pointerId !== gesture.pointerId)) return;
+  delete gesture.pointerId;
+  if (!gesture.moved) {
+    if (gesture.previewCenter !== null) finishWheelGesture();
+    else wheelGesture = null;
+    return;
+  }
+  suppressWheelClick = true;
+  setTimeout(() => { suppressWheelClick = false; }, 0);
+  finishWheelGesture(type !== 'pointerup');
+}));
+window.addEventListener('click', (event) => {
+  if (!suppressWheelClick) return;
+  event.preventDefault();
+  event.stopPropagation();
+}, true);
 // 滑鼠與觸控的上下按鈕已在 pointerdown 處理，click 只處理鍵盤（detail 為 0）
 byId('category-picker').addEventListener('click', (event) => {
   const category = event.target.closest('[data-category]');
