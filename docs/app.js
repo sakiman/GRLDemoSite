@@ -262,16 +262,16 @@ function renderCategories() {
   icons();
 }
 
-const twoWheelSide = { category: 1, production: 1 };
 function renderWheel(container, names, activeIndex, kind, noun, onShift, values = names.map((_, index) => index)) {
   const positions = ['far-previous', 'previous', 'center', 'next', 'far-next'];
-  const visible = Math.min(positions.length, names.length);
-  const before = names.length === 2 ? (twoWheelSide[kind] < 0 ? 1 : 0) : visible - 1 - Math.floor((visible - 1) / 2);
-  const wheelItem = (offset) => { const index = (activeIndex + offset + names.length) % names.length; return `<button type="button" class="wheel-item ${positions[offset + 2]}" data-${kind}="${values[index]}" ${offset === 0 ? 'aria-current="true"' : ''}><span>${escapeHtml(names[index])}</span>${offset === 0 ? '<i data-lucide="arrow-right"></i>' : ''}</button>`; };
-  const items = Array.from({ length: visible }, (_, position) => wheelItem(position - before)).join('');
-  container.innerHTML = `<div class="wheel-controls"><span>${noun}瀏覽</span><div><button type="button" data-shift="-1" title="上一個${noun}" aria-label="上一個${noun}"><i data-lucide="chevron-up"></i></button><button type="button" data-shift="1" title="下一個${noun}" aria-label="下一個${noun}"><i data-lucide="chevron-down"></i></button></div></div><div class="wheel" tabindex="0" aria-label="${noun}選擇器，可使用上下方向鍵">${items}</div><div class="wheel-caption"><span>SCROLL TO EXPLORE</span><span>${String(activeIndex + 1).padStart(2, '0')} / ${String(names.length).padStart(2, '0')}</span></div>`;
+  const items = positions.map((position, slot) => {
+    const index = activeIndex + slot - 2;
+    if (index < 0 || index >= names.length) return '';
+    return `<button type="button" class="wheel-item ${position}" data-${kind}="${values[index]}" ${index === activeIndex ? 'aria-current="true"' : ''}><span>${escapeHtml(names[index])}</span>${index === activeIndex ? '<i data-lucide="arrow-right"></i>' : ''}</button>`;
+  }).join('');
+  container.innerHTML = `<div class="wheel-controls"><span>${noun}瀏覽</span><div><button type="button" data-shift="-1" title="上一個${noun}" aria-label="上一個${noun}" ${activeIndex === 0 ? 'disabled' : ''}><i data-lucide="chevron-up"></i></button><button type="button" data-shift="1" title="下一個${noun}" aria-label="下一個${noun}" ${activeIndex === names.length - 1 ? 'disabled' : ''}><i data-lucide="chevron-down"></i></button></div></div><div class="wheel" tabindex="0" aria-label="${noun}選擇器，可使用上下方向鍵">${items}</div><div class="wheel-caption"><span>SCROLL TO EXPLORE</span><span>${String(activeIndex + 1).padStart(2, '0')} / ${String(names.length).padStart(2, '0')}</span></div>`;
   const wheel = container.querySelector('.wheel');
-  const shift = (direction) => { onShift(direction); rollWheel(container, direction); };
+  const shift = (direction) => { if (onShift(direction)) rollWheel(container, direction); };
   wheel.addEventListener('wheel', (event) => {
     if (!event.deltaY || names.length < 2) return;
     event.preventDefault();
@@ -283,34 +283,10 @@ function renderWheel(container, names, activeIndex, kind, noun, onShift, values 
   wheel.addEventListener('keydown', (event) => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); shift(event.key === 'ArrowDown' ? 1 : -1); container.querySelector('.wheel')?.focus(); } });
 }
 
-// 捲動後停在第一項時，下一次 rollWheel 會顯示提示分身
-let wheelWrapped = false;
-function noteWrap(visible, from, to, direction) {
-  wheelWrapped = Boolean(direction) && to !== from && visible[0]?.index === to;
-}
-
 function rollWheel(container, direction) {
   const wheel = container.querySelector('.wheel');
-  const wrapped = wheelWrapped;
-  wheelWrapped = false;
   if (!direction || !wheel || wheel.children.length < 2) return;
-  if (wrapped) highlightWheelWrap(wheel);
   wheel.classList.add(direction > 0 ? 'roll-down' : 'roll-up');
-}
-
-function highlightWheelWrap(wheel) {
-  const center = wheel.querySelector('.center');
-  if (!center) return;
-  const box = center.getBoundingClientRect();
-  // 分身掛在 body 上，才不會被圓柱外框裁切
-  const ghost = document.createElement('div');
-  ghost.className = 'wheel-ghost';
-  ghost.setAttribute('aria-hidden', 'true');
-  ghost.append(center.querySelector('span').cloneNode(true));
-  Object.assign(ghost.style, { left: `${box.left + window.scrollX}px`, top: `${box.top + window.scrollY}px`, width: `${box.width}px`, height: `${box.height}px` });
-  ghost.addEventListener('animationend', () => ghost.remove());
-  wheel.classList.add('wrapped');
-  document.body.append(ghost);
 }
 
 function renderProductions() {
@@ -376,20 +352,20 @@ function render() { renderPorts(); renderCategories(); renderProductions(); rend
 function chooseCategory(index) { state.categoryIndex = index; state.query = ''; state.productionQuery = ''; state.productionIndex = visibleProductions()[0]?.index ?? 0; byId('item-search').value = ''; byId('production-search').value = ''; render(); }
 function shiftCategory(direction) {
   const visible = visibleCategories();
-  if (visible.length < 2) return;
   const position = Math.max(0, visible.findIndex(({ index }) => index === state.categoryIndex));
-  const target = visible[(position + direction + visible.length) % visible.length].index;
-  noteWrap(visible, state.categoryIndex, target, direction);
-  chooseCategory(target);
+  const target = visible[position + direction];
+  if (!target) return false;
+  chooseCategory(target.index);
+  return true;
 }
 function chooseProduction(index) { state.productionIndex = index; state.query = ''; byId('item-search').value = ''; renderProductions(); renderItems(); }
 function shiftProduction(direction) {
   const visible = visibleProductions();
-  if (visible.length < 2) return;
   const position = Math.max(0, visible.findIndex(({ index }) => index === state.productionIndex));
-  const target = visible[(position + direction + visible.length) % visible.length].index;
-  noteWrap(visible, state.productionIndex, target, direction);
-  chooseProduction(target);
+  const target = visible[position + direction];
+  if (!target) return false;
+  chooseProduction(target.index);
+  return true;
 }
 function setItem(item, checked) {
   const category = currentCategory().name;
@@ -418,7 +394,7 @@ function enableHoldShift(container, shiftBy) {
     const button = event.target.closest('[data-shift]');
     if (!button || event.button !== 0) return;
     const direction = Number(button.dataset.shift);
-    const step = () => { shiftBy(direction); rollWheel(container, direction); };
+    const step = () => { if (shiftBy(direction)) rollWheel(container, direction); };
     stopHold();
     step();
     holdTimer = setTimeout(() => { step(); holdTimer = setInterval(step, 140); }, 400);
@@ -435,20 +411,16 @@ let suppressWheelClick = false;
 function previewWheel(gesture, distance = gesture.distance) {
   const { wheel, names, activeIndex, kind, values } = gesture;
   const step = Math.round(distance / WHEEL_STEP);
-  const center = ((activeIndex + step) % names.length + names.length) % names.length;
+  const center = activeIndex + step;
   const positions = ['outer-previous', 'far-previous', 'previous', 'center', 'next', 'far-next', 'outer-next'];
-  // 兩項時只顯示一份，另一項跟隨滑動方向切換位置
-  const side = names.length === 2 ? Math.sign(distance / WHEEL_STEP - step) || gesture.previewSide || -Math.sign(step) || twoWheelSide[kind] : 0;
-  const count = Math.min(names.length, positions.length);
-  const before = names.length < positions.length ? Math.min(2, Math.ceil((count - 1) / 2)) : 3;
-  if (gesture.previewCenter !== center || gesture.previewSide !== side) {
-    const offsets = names.length === 2 ? [0, side].sort((a, b) => a - b) : Array.from({ length: count }, (_, slot) => slot - before);
-    wheel.innerHTML = offsets.map((offset) => {
-      const index = ((center + offset) % names.length + names.length) % names.length;
-      return `<button type="button" class="wheel-item ${positions[offset + 3]}" data-wheel-offset="${offset}" data-${kind}="${values[index]}"><span>${escapeHtml(names[index])}</span></button>`;
+  if (gesture.previewCenter !== center) {
+    wheel.innerHTML = positions.map((position, slot) => {
+      const offset = slot - 3;
+      const index = center + offset;
+      if (index < 0 || index >= names.length) return '';
+      return `<button type="button" class="wheel-item ${position}" data-wheel-offset="${offset}" data-${kind}="${values[index]}"><span>${escapeHtml(names[index])}</span></button>`;
     }).join('');
     gesture.previewCenter = center;
-    gesture.previewSide = side;
   }
   // 與靜止時的圓柱位置一致，避免回正後跳動
   const tops = [-53, -1, 43, 91, 143, 189, 235];
@@ -463,15 +435,13 @@ function previewWheel(gesture, distance = gesture.distance) {
     const fraction = distance / WHEEL_STEP - step;
     const position = offset - fraction;
     const magnitude = Math.min(3, Math.abs(position));
-    // 項目不足時，換到另一端的項目先淡出，避免在空白處閃現
-    const recycling = names.length > 2 && names.length < positions.length && (fraction > 0 ? offset === -before : fraction < 0 && offset === count - before - 1);
     Object.assign(item.style, {
       top: `${interpolate(tops, position)}px`,
       height: `${interpolate(heights, position)}px`,
       fontSize: `${16 - Math.min(1, Math.max(0, magnitude - 1))}px`,
       transform: `rotateX(${-9 * position}deg) scale(${1 - 0.03 * magnitude})`,
       transformOrigin: position < 0 ? 'bottom' : position > 0 ? 'top' : 'center',
-      opacity: recycling ? String(1 - 2 * Math.abs(fraction)) : '',
+      opacity: '',
     });
   });
 }
@@ -482,18 +452,16 @@ function finishWheelGesture(cancel = false) {
   clearTimeout(gesture.timer);
   if (!gesture.wheel.isConnected) { wheelGesture = null; return; }
   const step = cancel ? 0 : Math.round(gesture.distance / WHEEL_STEP);
-  const target = ((gesture.activeIndex + step) % gesture.names.length + gesture.names.length) % gesture.names.length;
+  const target = gesture.activeIndex + step;
   const focused = document.activeElement === gesture.wheel;
   const commit = () => {
     if (wheelGesture === gesture) wheelGesture = null;
     if (!gesture.wheel.isConnected) return;
-    if (!cancel && gesture.names.length === 2) twoWheelSide[gesture.kind] = gesture.previewSide;
     if (target !== gesture.activeIndex) {
       if (gesture.kind === 'category') chooseCategory(gesture.values[target]);
       else chooseProduction(gesture.values[target]);
     } else if (gesture.kind === 'category') renderCategories();
     else renderProductions();
-    if (!cancel && target === 0 && step !== 0) highlightWheelWrap(gesture.container.querySelector('.wheel'));
     if (focused) gesture.container.querySelector('.wheel')?.focus();
   };
   if (cancel) {
@@ -502,11 +470,9 @@ function finishWheelGesture(cancel = false) {
   }
   gesture.wheel.classList.add('snapping');
   previewWheel(gesture, step * WHEEL_STEP);
-  const visible = Math.min(5, gesture.names.length);
-  const before = gesture.names.length === 2 ? (gesture.previewSide < 0 ? 1 : 0) : visible - 1 - Math.floor((visible - 1) / 2);
   gesture.wheel.querySelectorAll('.wheel-item').forEach((item) => {
     const offset = Number(item.dataset.wheelOffset);
-    if (offset < -before || offset >= visible - before) item.style.opacity = '0';
+    if (Math.abs(offset) > 2) item.style.opacity = '0';
   });
   gesture.snapping = true;
   gesture.timer = setTimeout(commit, WHEEL_SNAP_DURATION);
@@ -514,7 +480,7 @@ function finishWheelGesture(cancel = false) {
 
 function startWheelGesture(container, wheel, names, activeIndex, kind, values) {
   if (wheelGesture) finishWheelGesture();
-  wheel.classList.remove('roll-up', 'roll-down', 'wrapped');
+  wheel.classList.remove('roll-up', 'roll-down');
   wheel.classList.add('wheel-moving');
   wheelGesture = { container, wheel, names, activeIndex, kind, values, distance: 0, previewCenter: null };
   return wheelGesture;
@@ -532,9 +498,13 @@ function moveWheelByScroll(container, wheel, names, activeIndex, kind, values, d
     gesture.wheel.classList.remove('snapping');
     gesture.snapping = false;
   }
-  gesture.distance += distance;
+  gesture.distance = clampWheelDistance(gesture, gesture.distance + distance);
   previewWheel(gesture);
   gesture.timer = setTimeout(() => finishWheelGesture(), 120);
+}
+
+function clampWheelDistance(gesture, distance) {
+  return Math.max(-gesture.activeIndex * WHEEL_STEP, Math.min((gesture.names.length - 1 - gesture.activeIndex) * WHEEL_STEP, distance));
 }
 
 function enableSwipeShift(container, getEntries, getActiveIndex, kind) {
@@ -564,11 +534,11 @@ window.addEventListener('pointermove', (event) => {
   const gesture = wheelGesture;
   if (!gesture || event.pointerId !== gesture.pointerId || !gesture.wheel.isConnected) return;
   const movement = gesture.startY - event.clientY;
-  gesture.distance = gesture.baseDistance + movement;
+  gesture.distance = clampWheelDistance(gesture, gesture.baseDistance + movement);
   if (!gesture.moved && Math.abs(movement) < 4) return;
   if (!gesture.moved && event.isTrusted) gesture.wheel.setPointerCapture(event.pointerId);
   gesture.moved = true;
-  gesture.wheel.classList.remove('roll-up', 'roll-down', 'wrapped');
+  gesture.wheel.classList.remove('roll-up', 'roll-down');
   gesture.wheel.classList.add('wheel-moving');
   previewWheel(gesture);
 });
@@ -595,18 +565,16 @@ byId('category-picker').addEventListener('click', (event) => {
   const category = event.target.closest('[data-category]');
   const shift = event.target.closest('[data-shift]');
   const direction = category ? wheelDirection(category) : Number(shift?.dataset.shift);
-  if (category) { noteWrap(visibleCategories(), state.categoryIndex, Number(category.dataset.category), direction); chooseCategory(Number(category.dataset.category)); }
-  else if (shift && !event.detail) shiftCategory(direction);
-  else return;
+  if (category) chooseCategory(Number(category.dataset.category));
+  else if (!shift || event.detail || !shiftCategory(direction)) return;
   rollWheel(event.currentTarget, direction);
 });
 byId('production-list').addEventListener('click', (event) => {
   const production = event.target.closest('[data-production]');
   const shift = event.target.closest('[data-shift]');
   const direction = production ? wheelDirection(production) : Number(shift?.dataset.shift);
-  if (production) { noteWrap(visibleProductions(), state.productionIndex, Number(production.dataset.production), direction); chooseProduction(Number(production.dataset.production)); }
-  else if (shift && !event.detail) shiftProduction(direction);
-  else return;
+  if (production) chooseProduction(Number(production.dataset.production));
+  else if (!shift || event.detail || !shiftProduction(direction)) return;
   rollWheel(event.currentTarget, direction);
 });
 byId('item-list').addEventListener('change', (event) => { if (event.target.matches('[data-item]')) { setItem(event.target.dataset.item, event.target.checked); refreshSelection(); } });

@@ -412,6 +412,10 @@ p {
 .wheel-controls svg {
   width: 14px;
 }
+.wheel-controls button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 .wheel {
   height: 230px;
   position: relative;
@@ -567,54 +571,6 @@ p {
   animation:
     roll-up 0.22s cubic-bezier(0.2, 0.8, 0.3, 1),
     roll-out 0.22s ease-out;
-}
-@keyframes wrap-ghost {
-  from {
-    opacity: 0.95;
-    translate: 0 0;
-    scale: 1;
-  }
-  45% {
-    opacity: 0.7;
-  }
-  to {
-    opacity: 0;
-    scale: 1.28;
-  }
-}
-@keyframes wrap-flash {
-  35% {
-    filter: brightness(1.45);
-    box-shadow: 0 0 0 3px #d9ec7599, 0 4px 12px #0f3d3040;
-  }
-}
-.wheel-ghost {
-  position: absolute;
-  z-index: 1000;
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  padding: 0 17px;
-  white-space: nowrap;
-  font-size: 16px;
-  font-weight: 700;
-  color: #f4ffc2;
-  transform-origin: center;
-  border-radius: 6px;
-  background: linear-gradient(180deg, #2a9a7e, #1b7d65 55%, #136350);
-  box-shadow: 0 0 0 2px #d9ec75, 0 10px 26px #0f3d3066;
-  text-shadow: 0 0 10px #d9ec75b3;
-  animation: wrap-ghost 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) both;
-}
-.wheel-ghost span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.wheel.wrapped::before {
-  animation: wrap-flash 0.9s ease-out;
 }
 .wheel-caption {
   display: flex;
