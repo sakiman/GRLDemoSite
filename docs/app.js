@@ -405,6 +405,10 @@ enableHoldShift(byId('production-list'), shiftProduction);
 ['pointerup', 'pointercancel', 'blur'].forEach((type) => window.addEventListener(type, stopHold));
 const WHEEL_STEP = 52;
 const WHEEL_SNAP_DURATION = 160;
+const WHEEL_MOMENTUM_DECELERATION = 0.002;
+const WHEEL_MOMENTUM_MIN_SPEED = 0.08;
+const WHEEL_MOMENTUM_MAX_SPEED = 1.8;
+const WHEEL_VELOCITY_WINDOW = 100;
 let wheelGesture = null;
 let suppressWheelClick = false;
 
@@ -450,6 +454,7 @@ function finishWheelGesture(cancel = false) {
   const gesture = wheelGesture;
   if (!gesture) return;
   clearTimeout(gesture.timer);
+  cancelAnimationFrame(gesture.frame);
   if (!gesture.wheel.isConnected) { wheelGesture = null; return; }
   const step = cancel ? 0 : Math.round(gesture.distance / WHEEL_STEP);
   const target = gesture.activeIndex + step;
@@ -488,11 +493,12 @@ function startWheelGesture(container, wheel, names, activeIndex, kind, values) {
 
 function moveWheelByScroll(container, wheel, names, activeIndex, kind, values, distance) {
   if (wheelGesture && (wheelGesture.wheel !== wheel || wheelGesture.pointerId !== undefined)) {
-    finishWheelGesture();
-    wheelGesture = null;
+    finishWheelGesture(true);
   }
   const gesture = wheelGesture || startWheelGesture(container, wheel, names, activeIndex, kind, values);
   clearTimeout(gesture.timer);
+  cancelAnimationFrame(gesture.frame);
+  gesture.frame = null;
   if (gesture.snapping) {
     gesture.distance = Math.round(gesture.distance / WHEEL_STEP) * WHEEL_STEP;
     gesture.wheel.classList.remove('snapping');
@@ -507,25 +513,66 @@ function clampWheelDistance(gesture, distance) {
   return Math.max(-gesture.activeIndex * WHEEL_STEP, Math.min((gesture.names.length - 1 - gesture.activeIndex) * WHEEL_STEP, distance));
 }
 
+function sampleWheelVelocity(gesture) {
+  const now = performance.now();
+  gesture.samples.push({ time: now, distance: gesture.distance });
+  gesture.samples = gesture.samples.filter((sample) => now - sample.time <= WHEEL_VELOCITY_WINDOW);
+}
+
+function coastWheel(gesture) {
+  sampleWheelVelocity(gesture);
+  const first = gesture.samples[0];
+  const last = gesture.samples[gesture.samples.length - 1];
+  const elapsed = last.time - first.time;
+  let velocity = elapsed > 0 ? (last.distance - first.distance) / elapsed : 0;
+  velocity = Math.max(-WHEEL_MOMENTUM_MAX_SPEED, Math.min(WHEEL_MOMENTUM_MAX_SPEED, velocity));
+  if (Math.abs(velocity) < WHEEL_MOMENTUM_MIN_SPEED || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    finishWheelGesture();
+    return;
+  }
+  let previousTime = performance.now();
+  const tick = (time) => {
+    if (wheelGesture !== gesture) return;
+    if (!gesture.wheel.isConnected) { wheelGesture = null; return; }
+    const duration = Math.min(time - previousTime, Math.abs(velocity) / WHEEL_MOMENTUM_DECELERATION);
+    previousTime = time;
+    const nextVelocity = velocity - Math.sign(velocity) * WHEEL_MOMENTUM_DECELERATION * duration;
+    const nextDistance = gesture.distance + (velocity + nextVelocity) * duration / 2;
+    gesture.distance = clampWheelDistance(gesture, nextDistance);
+    previewWheel(gesture);
+    velocity = nextVelocity;
+    if (gesture.distance !== nextDistance || Math.abs(velocity) < WHEEL_MOMENTUM_MIN_SPEED) {
+      finishWheelGesture();
+    } else {
+      gesture.frame = requestAnimationFrame(tick);
+    }
+  };
+  gesture.frame = requestAnimationFrame(tick);
+}
+
 function enableSwipeShift(container, getEntries, getActiveIndex, kind) {
   container.addEventListener('pointerdown', (event) => {
     const wheel = event.target.closest('.wheel');
     const entries = getEntries();
     if (!wheel || event.button !== 0 || entries.length < 2) return;
     if (wheelGesture && wheelGesture.wheel !== wheel) {
-      finishWheelGesture();
-      wheelGesture = null;
+      finishWheelGesture(true);
     }
     if (wheelGesture) {
       if (wheelGesture.pointerId !== undefined) return;
       clearTimeout(wheelGesture.timer);
+      const interruptedMomentum = Boolean(wheelGesture.frame);
+      cancelAnimationFrame(wheelGesture.frame);
+      wheelGesture.frame = null;
       if (wheelGesture.snapping) wheelGesture.distance = Math.round(wheelGesture.distance / WHEEL_STEP) * WHEEL_STEP;
       wheelGesture.wheel.classList.remove('snapping');
-      Object.assign(wheelGesture, { snapping: false, pointerId: event.pointerId, startY: event.clientY, baseDistance: wheelGesture.distance, moved: false });
+      Object.assign(wheelGesture, { snapping: false, pointerId: event.pointerId, pointerType: event.pointerType, startY: event.clientY, baseDistance: wheelGesture.distance, moved: false, interruptedMomentum, samples: [] });
+      if (event.pointerType === 'touch') sampleWheelVelocity(wheelGesture);
       return;
     }
     const activeIndex = Math.max(0, entries.findIndex(({ index }) => index === getActiveIndex()));
-    wheelGesture = { container, wheel, names: entries.map((entry) => entry[kind].name), activeIndex, kind, values: entries.map(({ index }) => index), distance: 0, previewCenter: null, pointerId: event.pointerId, startY: event.clientY, baseDistance: 0, moved: false };
+    wheelGesture = { container, wheel, names: entries.map((entry) => entry[kind].name), activeIndex, kind, values: entries.map(({ index }) => index), distance: 0, previewCenter: null, pointerId: event.pointerId, pointerType: event.pointerType, startY: event.clientY, baseDistance: 0, moved: false, samples: [] };
+    if (event.pointerType === 'touch') sampleWheelVelocity(wheelGesture);
   });
 }
 enableSwipeShift(byId('category-picker'), visibleCategories, () => state.categoryIndex, 'category');
@@ -535,6 +582,7 @@ window.addEventListener('pointermove', (event) => {
   if (!gesture || event.pointerId !== gesture.pointerId || !gesture.wheel.isConnected) return;
   const movement = gesture.startY - event.clientY;
   gesture.distance = clampWheelDistance(gesture, gesture.baseDistance + movement);
+  if (gesture.pointerType === 'touch') sampleWheelVelocity(gesture);
   if (!gesture.moved && Math.abs(movement) < 4) return;
   if (!gesture.moved && event.isTrusted) gesture.wheel.setPointerCapture(event.pointerId);
   gesture.moved = true;
@@ -547,13 +595,18 @@ window.addEventListener('pointermove', (event) => {
   if (!gesture || gesture.pointerId === undefined || (type !== 'blur' && event.pointerId !== gesture.pointerId)) return;
   delete gesture.pointerId;
   if (!gesture.moved) {
+    if (gesture.interruptedMomentum) {
+      suppressWheelClick = true;
+      setTimeout(() => { suppressWheelClick = false; }, 0);
+    }
     if (gesture.previewCenter !== null) finishWheelGesture();
     else wheelGesture = null;
     return;
   }
   suppressWheelClick = true;
   setTimeout(() => { suppressWheelClick = false; }, 0);
-  finishWheelGesture(type !== 'pointerup');
+  if (type === 'pointerup' && gesture.pointerType === 'touch') coastWheel(gesture);
+  else finishWheelGesture(type !== 'pointerup');
 }));
 window.addEventListener('click', (event) => {
   if (!suppressWheelClick) return;
