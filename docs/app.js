@@ -581,11 +581,17 @@ window.addEventListener('pointermove', (event) => {
   const gesture = wheelGesture;
   if (!gesture || event.pointerId !== gesture.pointerId || !gesture.wheel.isConnected) return;
   const movement = gesture.startY - event.clientY;
-  gesture.distance = clampWheelDistance(gesture, gesture.baseDistance + movement);
+  const nextDistance = gesture.baseDistance + movement;
+  gesture.distance = clampWheelDistance(gesture, nextDistance);
   if (gesture.pointerType === 'touch') sampleWheelVelocity(gesture);
   if (!gesture.moved && Math.abs(movement) < 4) return;
   if (!gesture.moved && event.isTrusted) gesture.wheel.setPointerCapture(event.pointerId);
   gesture.moved = true;
+  if (gesture.distance !== nextDistance) {
+    gesture.startY = event.clientY;
+    gesture.baseDistance = gesture.distance;
+    if (gesture.pointerType === 'touch') gesture.samples = gesture.samples.slice(-1);
+  }
   gesture.wheel.classList.remove('roll-up', 'roll-down');
   gesture.wheel.classList.add('wheel-moving');
   previewWheel(gesture);
