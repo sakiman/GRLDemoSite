@@ -1,26 +1,46 @@
+/** 保存頁面狀態；selected 指向目前 Port 的測試項目。 */
 const state = { categories: [], categoryIndex: 0, productionIndex: 0, mode: 'wheel', ports: [{ name: 'Port 1', selected: new Map() }], portIndex: 0, query: '', productionQuery: '', categoryQuery: '', favorites: [], get selected() { return this.ports[this.portIndex].selected; } };
+/** 依 ID 取得頁面元素。 */
 const byId = (id) => document.getElementById(id);
+/** 跳脫文字中的 HTML 特殊字元，供產生頁面內容使用。 */
 const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+/** 將頁面中尚未處理的 Lucide 標記轉為圖示。 */
 const icons = () => window.lucide?.createIcons();
+/** 取得目前選取的分類。 */
 const currentCategory = () => state.categories[state.categoryIndex];
+/** 取得目前分類中選取的產品功能。 */
 const currentProduction = () => currentCategory()?.productions[state.productionIndex];
+/** 依名稱自然排序，數字按數值比較且忽略大小寫差異。 */
 const compareNames = (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+/** 圓柱模式依名稱排序，列表模式維持資料原順序。 */
 const wheelOrder = (entries, key) => (state.mode === 'wheel' ? entries.sort((a, b) => compareNames(a[key].name, b[key].name)) : entries);
+/** 依搜尋條件取得可見分類及其原始索引。 */
 const visibleCategories = () => wheelOrder(state.categories.map((category, index) => ({ category, index })).filter(({ category }) => category.name.toLocaleLowerCase().includes(state.categoryQuery.toLocaleLowerCase())), 'category');
+/** 依搜尋條件取得目前分類的可見產品功能及其原始索引。 */
 const visibleProductions = () => wheelOrder((currentCategory()?.productions || []).map((production, index) => ({ production, index })).filter(({ production }) => production.name.toLocaleLowerCase().includes(state.productionQuery.toLocaleLowerCase())), 'production');
+/** 將已選項目依分類、產品功能及項目名稱排序。 */
 const sortedSelection = (selected = state.selected) => [...selected.entries()].sort(([, a], [, b]) => compareNames(a.category, b.category) || compareNames(a.production, b.production) || compareNames(a.item, b.item));
+/** 由分類、產品功能與項目名稱組成已選項目的唯一鍵。 */
 const itemKey = (category, production, item) => JSON.stringify([category, production, item]);
 const FAVORITES_KEY = 'grl-test-selector-favorites';
+/** 將項目物件轉為已選項目的唯一鍵。 */
 const entryKey = ({ category, production, item }) => itemKey(category, production, item);
+/** 檢查項目是否仍存在於目前載入的資料中。 */
 const itemExists = ({ category, production, item }) => Boolean(state.categories.find((entry) => entry.name === category)?.productions.find((entry) => entry.name === production)?.items.includes(item));
+/** 檢查保存的項目是否包含字串格式的分類、產品功能及項目名稱。 */
 const isEntry = (entry) => [entry?.category, entry?.production, entry?.item].every((value) => typeof value === 'string');
 const PORTS_KEY = 'grl-test-selector-ports';
 const MAX_PORT_BATCH = 20;
+/** 取得目前選取的 Port。 */
 const currentPort = () => state.ports[state.portIndex];
+/** 建立 Port，並將傳入的測試項目整理成以唯一鍵索引的 Map。 */
 const newPort = (name, entries = []) => ({ name, selected: new Map(entries.map(({ category, production, item }) => [itemKey(category, production, item), { category, production, item }])) });
+/** 檢查是否已有同名 Port。 */
 const portNameTaken = (name) => state.ports.some((port) => port.name === name);
+/** 計算所有 Port 已選測試項目的總數。 */
 const totalSelected = () => state.ports.reduce((total, port) => total + port.selected.size, 0);
 
+/** 產生指定數量且不與現有 Port 同名的編號名稱。 */
 function numberedPortNames(base, count) {
   const names = [];
   for (let number = portNameTaken(base) ? 2 : 1; names.length < count; number += 1) {
@@ -30,7 +50,7 @@ function numberedPortNames(base, count) {
   return names;
 }
 
-// 回傳已保存但目前資料中找不到的測試項目數量
+/** 從 localStorage 載入 Port，回傳已保存但目前資料中找不到的項目數量。 */
 function loadPorts() {
   try {
     const stored = JSON.parse(localStorage.getItem(PORTS_KEY) || 'null');
@@ -44,6 +64,7 @@ function loadPorts() {
   }
 }
 
+/** 將所有 Port、勾選項目與目前 Port 存入 localStorage；成功時回傳 true。 */
 function savePorts() {
   try {
     localStorage.setItem(PORTS_KEY, JSON.stringify({ active: state.portIndex, ports: state.ports.map(({ name, selected }) => ({ name, items: [...selected.values()] })) }));
@@ -53,6 +74,7 @@ function savePorts() {
   }
 }
 
+/** 保存 Port 設定並更新選取畫面；保存失敗時顯示提示。 */
 function refreshSelection(message = '') {
   const notice = savePorts() ? message : '無法保存 Port 設定，重新整理後勾選內容將不會保留。';
   renderPorts();
@@ -61,9 +83,12 @@ function refreshSelection(message = '') {
   if (notice) byId('message').textContent = notice;
 }
 
+/** 有多個 Port 時產生拖曳握把的 HTML。 */
 const dragGrip = () => (state.ports.length > 1 ? '<i data-lucide="grip-vertical" class="drag-grip"></i>' : '');
+/** 有多個 Port 時回傳可拖曳排序的提示文字。 */
 const dragHint = () => (state.ports.length > 1 ? '（可拖曳調整順序）' : '');
 
+/** 更新 Port 分頁、新增按鈕、刪除按鈕狀態及圖示。 */
 function renderPorts() {
   byId('port-list').innerHTML = `${state.ports.map((port, index) => {
     const active = index === state.portIndex;
@@ -74,6 +99,7 @@ function renderPorts() {
 }
 
 let portFormMode = 'add';
+/** 依新增或重新命名模式顯示並初始化 Port 表單。 */
 function openPortForm(mode) {
   const rename = mode === 'rename';
   const input = byId('port-name');
@@ -88,10 +114,12 @@ function openPortForm(mode) {
   input.select();
 }
 
+/** 隱藏 Port 表單。 */
 function closePortForm() {
   byId('port-form').hidden = true;
 }
 
+/** 切換目前 Port，關閉表單並刷新選取畫面。 */
 function choosePort(index) {
   state.portIndex = index;
   closePortForm();
@@ -99,6 +127,7 @@ function choosePort(index) {
   refreshSelection();
 }
 
+/** 複製目前 Port 的勾選內容，並切換至新 Port。 */
 function duplicatePort() {
   const source = currentPort();
   const [name] = numberedPortNames(source.name.replace(/\s+\d+$/, '') || source.name, 1);
@@ -108,6 +137,7 @@ function duplicatePort() {
   refreshSelection(`已將「${source.name}」複製為「${name}」（${source.selected.size} 項）`);
 }
 
+/** 刪除目前 Port；至少保留一個 Port。 */
 function deletePort() {
   if (state.ports.length < 2) return;
   const { name } = currentPort();
@@ -118,6 +148,7 @@ function deletePort() {
   refreshSelection(`已刪除 Port「${name}」`);
 }
 
+/** 移動 Port 的排序位置，並保留目前選取的 Port。 */
 function movePort(from, to) {
   const active = currentPort();
   const [port] = state.ports.splice(from, 1);
@@ -128,12 +159,14 @@ function movePort(from, to) {
 
 let portDrag = null;
 let suppressPortClick = false;
+/** 更新拖曳中的 Port 與預計插入位置的視覺標記。 */
 const markPortDrop = (targets, from = -1, index = -1, after = false) => targets.forEach((target, position) => {
   target.classList.toggle('dragging', position === from);
   target.classList.toggle('drop-before', position === index && !after);
   target.classList.toggle('drop-after', position === index && after);
 });
 
+/** 在指定容器啟用 Port 拖曳排序；vertical 決定以垂直或水平位置判斷落點。 */
 function enablePortDrag(container, handleSelector, targetSelector, vertical) {
   container.addEventListener('pointerdown', (event) => {
     const handle = event.target.closest(handleSelector);
@@ -143,7 +176,7 @@ function enablePortDrag(container, handleSelector, targetSelector, vertical) {
   });
 }
 
-// 跟著游標移動的半透明分身
+/** 建立跟隨游標移動的半透明 Port 分身。 */
 function createPortGhost(handle) {
   const ghost = handle.cloneNode(true);
   const { width, height } = handle.getBoundingClientRect();
@@ -155,6 +188,7 @@ function createPortGhost(handle) {
   return ghost;
 }
 
+/** 更新 Port 拖曳分身與落點；移動距離不足時仍視為點選。 */
 function trackPortDrag(event) {
   if (!portDrag) return;
   const { from, container, targetSelector, vertical } = portDrag;
@@ -182,6 +216,7 @@ function trackPortDrag(event) {
   markPortDrop(targets, from, portDrag.to === null ? -1 : index, after);
 }
 
+/** 結束或取消 Port 拖曳，清除視覺標記，並在有效落點更新順序。 */
 function endPortDrag(event) {
   if (!portDrag) return;
   const { from, to, container, targetSelector, active, ghost } = portDrag;
@@ -195,6 +230,7 @@ function endPortDrag(event) {
   if (event.type === 'pointerup' && to !== null) movePort(from, to > from ? to - 1 : to);
 }
 
+/** 從 localStorage 載入格式有效且包含項目的最愛。 */
 function loadFavorites() {
   try {
     const stored = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
@@ -204,6 +240,7 @@ function loadFavorites() {
   }
 }
 
+/** 保存最愛並更新畫面；保存失敗時提示使用者並回傳 false。 */
 function storeFavorites(favorites) {
   try {
     localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
@@ -216,6 +253,7 @@ function storeFavorites(favorites) {
   return true;
 }
 
+/** 更新最愛按鈕及其與目前 Port 勾選內容的符合狀態。 */
 function renderFavorites() {
   byId('favorite-list').innerHTML = state.favorites.length ? state.favorites.map((favorite, index) => {
     const name = escapeHtml(favorite.name);
@@ -225,6 +263,7 @@ function renderFavorites() {
   icons();
 }
 
+/** 將仍存在的最愛項目加入目前 Port，並提示新增及缺失數量。 */
 function applyFavorite(favorite) {
   const available = favorite.items.filter(itemExists);
   const added = available.filter((entry) => !state.selected.has(entryKey(entry)));
@@ -233,17 +272,20 @@ function applyFavorite(favorite) {
   refreshSelection(`已將「${favorite.name}」帶入「${currentPort().name}」：${added.length ? `新增 ${added.length} 項` : '項目都已在清單中'}${missing ? `，另有 ${missing} 項已不在資料中` : ''}`);
 }
 
+/** 經使用者確認後刪除指定的最愛。 */
 function removeFavorite(index) {
   const { name } = state.favorites[index];
   if (!window.confirm(`確定刪除我的最愛「${name}」？`)) return;
   if (storeFavorites(state.favorites.filter((_, position) => position !== index))) byId('message').textContent = `已刪除我的最愛「${name}」`;
 }
 
+/** 隱藏最愛表單並清空名稱。 */
 function closeFavoriteForm() {
   byId('favorite-form').hidden = true;
   byId('favorite-name').value = '';
 }
 
+/** 依選擇模式及搜尋條件更新分類選單、數量與空狀態。 */
 function renderCategories() {
   const picker = byId('category-picker');
   const categories = state.categories;
@@ -262,6 +304,7 @@ function renderCategories() {
   icons();
 }
 
+/** 繪製有限邊界的圓柱選單，並綁定滾輪及方向鍵；values 對應資料原始索引。 */
 function renderWheel(container, names, activeIndex, kind, noun, onShift, values = names.map((_, index) => index)) {
   const positions = ['far-previous', 'previous', 'center', 'next', 'far-next'];
   const items = positions.map((position, slot) => {
@@ -271,6 +314,7 @@ function renderWheel(container, names, activeIndex, kind, noun, onShift, values 
   }).join('');
   container.innerHTML = `<div class="wheel-controls"><span>${noun}瀏覽</span><div><button type="button" data-shift="-1" title="上一個${noun}" aria-label="上一個${noun}" ${activeIndex === 0 ? 'disabled' : ''}><i data-lucide="chevron-up"></i></button><button type="button" data-shift="1" title="下一個${noun}" aria-label="下一個${noun}" ${activeIndex === names.length - 1 ? 'disabled' : ''}><i data-lucide="chevron-down"></i></button></div></div><div class="wheel" tabindex="0" aria-label="${noun}選擇器，可使用上下方向鍵">${items}</div><div class="wheel-caption"><span>SCROLL TO EXPLORE</span><span>${String(activeIndex + 1).padStart(2, '0')} / ${String(names.length).padStart(2, '0')}</span></div>`;
   const wheel = container.querySelector('.wheel');
+  /** 移動選取項目，成功時播放圓柱動畫。 */
   const shift = (direction) => { if (onShift(direction)) rollWheel(container, direction); };
   wheel.addEventListener('wheel', (event) => {
     if (!event.deltaY || names.length < 2) return;
@@ -283,12 +327,14 @@ function renderWheel(container, names, activeIndex, kind, noun, onShift, values 
   wheel.addEventListener('keydown', (event) => { if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); shift(event.key === 'ArrowDown' ? 1 : -1); container.querySelector('.wheel')?.focus(); } });
 }
 
+/** 依移動方向播放一次圓柱切換動畫。 */
 function rollWheel(container, direction) {
   const wheel = container.querySelector('.wheel');
   if (!direction || !wheel || wheel.children.length < 2) return;
   wheel.classList.add(direction > 0 ? 'roll-down' : 'roll-up');
 }
 
+/** 依選擇模式及搜尋條件更新目前分類的產品功能選單。 */
 function renderProductions() {
   const list = byId('production-list');
   const productions = currentCategory()?.productions || [];
@@ -307,13 +353,16 @@ function renderProductions() {
   icons();
 }
 
+/** 取得符合搜尋條件並依名稱排序的測試項目。 */
 const visibleItems = () => (currentProduction()?.items || []).filter((item) => item.toLocaleLowerCase().includes(state.query.toLocaleLowerCase())).sort(compareNames);
 
+/** 更新測試項目清單、勾選數量、全選狀態及目前路徑。 */
 function renderItems() {
   const category = currentCategory();
   const production = currentProduction();
   const items = production?.items || [];
   const visible = visibleItems();
+  /** 檢查目前分類與產品功能中的項目是否已勾選。 */
   const isSelected = (item) => state.selected.has(itemKey(category.name, production.name, item));
   const selectedCount = items.filter(isSelected).length;
   byId('item-count').textContent = `${selectedCount} / ${items.length}`;
@@ -331,6 +380,7 @@ function renderItems() {
   icons();
 }
 
+/** 更新所有 Port 的已選項目清單、總數與操作按鈕狀態。 */
 function renderSelection() {
   const total = totalSelected();
   byId('selected-count').textContent = total;
@@ -348,8 +398,11 @@ function renderSelection() {
   icons();
 }
 
+/** 重新繪製 Port、選擇器及已選項目的主要畫面。 */
 function render() { renderPorts(); renderCategories(); renderProductions(); renderItems(); renderSelection(); }
+/** 切換分類，清除相關搜尋並選取該分類第一個可見產品功能。 */
 function chooseCategory(index) { state.categoryIndex = index; state.query = ''; state.productionQuery = ''; state.productionIndex = visibleProductions()[0]?.index ?? 0; byId('item-search').value = ''; byId('production-search').value = ''; render(); }
+/** 依方向切換相鄰的可見分類；超出邊界時回傳 false。 */
 function shiftCategory(direction) {
   const visible = visibleCategories();
   const position = Math.max(0, visible.findIndex(({ index }) => index === state.categoryIndex));
@@ -358,7 +411,9 @@ function shiftCategory(direction) {
   chooseCategory(target.index);
   return true;
 }
+/** 切換產品功能，清除測試項目搜尋並更新相關畫面。 */
 function chooseProduction(index) { state.productionIndex = index; state.query = ''; byId('item-search').value = ''; renderProductions(); renderItems(); }
+/** 依方向切換相鄰的可見產品功能；超出邊界時回傳 false。 */
 function shiftProduction(direction) {
   const visible = visibleProductions();
   const position = Math.max(0, visible.findIndex(({ index }) => index === state.productionIndex));
@@ -367,6 +422,7 @@ function shiftProduction(direction) {
   chooseProduction(target.index);
   return true;
 }
+/** 在目前 Port 中加入或移除目前分類及產品功能的測試項目。 */
 function setItem(item, checked) {
   const category = currentCategory().name;
   const production = currentProduction().name;
@@ -375,6 +431,7 @@ function setItem(item, checked) {
   else state.selected.delete(key);
 }
 
+// 切換圓柱與列表模式，並更新兩個選單。
 document.querySelector('.mode-switch').addEventListener('click', (event) => {
   const button = event.target.closest('[data-mode]');
   if (!button) return;
@@ -383,17 +440,21 @@ document.querySelector('.mode-switch').addEventListener('click', (event) => {
   renderCategories();
   renderProductions();
 });
+/** 依圓柱項目的位置判斷切換動畫方向。 */
 const wheelDirection = (item) => (/previous/.test(item.className) ? -1 : /next/.test(item.className) ? 1 : 0);
 let holdTimer = 0;
+/** 停止上下按鈕長按時的延遲或連續切換。 */
 function stopHold() {
   clearTimeout(holdTimer);
   clearInterval(holdTimer);
 }
+/** 綁定圓柱上下按鈕，按下時切換一次，長按時持續切換。 */
 function enableHoldShift(container, shiftBy) {
   container.addEventListener('pointerdown', (event) => {
     const button = event.target.closest('[data-shift]');
     if (!button || event.button !== 0) return;
     const direction = Number(button.dataset.shift);
+    /** 嘗試依按鈕方向切換一項，成功時播放動畫。 */
     const step = () => { if (shiftBy(direction)) rollWheel(container, direction); };
     stopHold();
     step();
@@ -412,6 +473,7 @@ const WHEEL_VELOCITY_WINDOW = 100;
 let wheelGesture = null;
 let suppressWheelClick = false;
 
+/** 依手勢距離預覽圓柱項目的位置與外觀，不直接變更已選項目。 */
 function previewWheel(gesture, distance = gesture.distance) {
   const { wheel, names, activeIndex, kind, values } = gesture;
   const step = Math.round(distance / WHEEL_STEP);
@@ -429,6 +491,7 @@ function previewWheel(gesture, distance = gesture.distance) {
   // 與靜止時的圓柱位置一致，避免回正後跳動
   const tops = [-53, -1, 43, 91, 143, 189, 235];
   const heights = [42, 42, 44, 48, 44, 42, 42];
+  /** 以相鄰位置的數值內插，讓項目在圓柱上平滑移動。 */
   const interpolate = (values, position) => {
     const lower = Math.max(0, Math.min(5, Math.floor(position + 3)));
     const fraction = Math.max(0, Math.min(1, position + 3 - lower));
@@ -450,6 +513,7 @@ function previewWheel(gesture, distance = gesture.distance) {
   });
 }
 
+/** 結束圓柱手勢：取消時還原原選項，否則回正至最近項目後提交選取。 */
 function finishWheelGesture(cancel = false) {
   const gesture = wheelGesture;
   if (!gesture) return;
@@ -459,6 +523,7 @@ function finishWheelGesture(cancel = false) {
   const step = cancel ? 0 : Math.round(gesture.distance / WHEEL_STEP);
   const target = gesture.activeIndex + step;
   const focused = document.activeElement === gesture.wheel;
+  /** 套用最終選取並重繪圓柱；必要時恢復鍵盤焦點。 */
   const commit = () => {
     if (wheelGesture === gesture) wheelGesture = null;
     if (!gesture.wheel.isConnected) return;
@@ -483,6 +548,7 @@ function finishWheelGesture(cancel = false) {
   gesture.timer = setTimeout(commit, WHEEL_SNAP_DURATION);
 }
 
+/** 建立滾輪手勢狀態，並將圓柱切換至移動中的外觀。 */
 function startWheelGesture(container, wheel, names, activeIndex, kind, values) {
   if (wheelGesture) finishWheelGesture();
   wheel.classList.remove('roll-up', 'roll-down');
@@ -491,6 +557,7 @@ function startWheelGesture(container, wheel, names, activeIndex, kind, values) {
   return wheelGesture;
 }
 
+/** 累積滾輪移動距離並更新預覽；停止滾動後執行回正。 */
 function moveWheelByScroll(container, wheel, names, activeIndex, kind, values, distance) {
   if (wheelGesture && (wheelGesture.wheel !== wheel || wheelGesture.pointerId !== undefined)) {
     finishWheelGesture(true);
@@ -509,16 +576,19 @@ function moveWheelByScroll(container, wheel, names, activeIndex, kind, values, d
   gesture.timer = setTimeout(() => finishWheelGesture(), 120);
 }
 
+/** 將圓柱移動距離限制在第一項與最後一項之間。 */
 function clampWheelDistance(gesture, distance) {
   return Math.max(-gesture.activeIndex * WHEEL_STEP, Math.min((gesture.names.length - 1 - gesture.activeIndex) * WHEEL_STEP, distance));
 }
 
+/** 記錄近期觸控位置，用於估算放手時的滑動速度。 */
 function sampleWheelVelocity(gesture) {
   const now = performance.now();
   gesture.samples.push({ time: now, distance: gesture.distance });
   gesture.samples = gesture.samples.filter((sample) => now - sample.time <= WHEEL_VELOCITY_WINDOW);
 }
 
+/** 觸控放手後依近期速度逐漸減速，停止或碰到邊界後回正。 */
 function coastWheel(gesture) {
   sampleWheelVelocity(gesture);
   const first = gesture.samples[0];
@@ -531,6 +601,7 @@ function coastWheel(gesture) {
     return;
   }
   let previousTime = performance.now();
+  /** 更新一個慣性動畫影格；速度不足或碰到邊界時結束手勢。 */
   const tick = (time) => {
     if (wheelGesture !== gesture) return;
     if (!gesture.wheel.isConnected) { wheelGesture = null; return; }
@@ -550,6 +621,7 @@ function coastWheel(gesture) {
   gesture.frame = requestAnimationFrame(tick);
 }
 
+/** 綁定圓柱拖曳起始事件，並處理新手勢對慣性或回正的中斷。 */
 function enableSwipeShift(container, getEntries, getActiveIndex, kind) {
   container.addEventListener('pointerdown', (event) => {
     const wheel = event.target.closest('.wheel');
@@ -577,6 +649,7 @@ function enableSwipeShift(container, getEntries, getActiveIndex, kind) {
 }
 enableSwipeShift(byId('category-picker'), visibleCategories, () => state.categoryIndex, 'category');
 enableSwipeShift(byId('production-list'), visibleProductions, () => state.productionIndex, 'production');
+// 拖曳時更新圓柱預覽；碰到邊界後重設基準，讓反向滑動立即生效。
 window.addEventListener('pointermove', (event) => {
   const gesture = wheelGesture;
   if (!gesture || event.pointerId !== gesture.pointerId || !gesture.wheel.isConnected) return;
@@ -596,6 +669,7 @@ window.addEventListener('pointermove', (event) => {
   gesture.wheel.classList.add('wheel-moving');
   previewWheel(gesture);
 });
+// 結束拖曳：觸控放手啟動慣性，取消或失焦則還原選項。
 ['pointerup', 'pointercancel', 'blur'].forEach((type) => window.addEventListener(type, (event) => {
   const gesture = wheelGesture;
   if (!gesture || gesture.pointerId === undefined || (type !== 'blur' && event.pointerId !== gesture.pointerId)) return;
@@ -614,12 +688,14 @@ window.addEventListener('pointermove', (event) => {
   if (type === 'pointerup' && gesture.pointerType === 'touch') coastWheel(gesture);
   else finishWheelGesture(type !== 'pointerup');
 }));
+// 避免拖曳結束後產生的 click 意外選取圓柱項目。
 window.addEventListener('click', (event) => {
   if (!suppressWheelClick) return;
   event.preventDefault();
   event.stopPropagation();
 }, true);
 // 滑鼠與觸控的上下按鈕已在 pointerdown 處理，click 只處理鍵盤（detail 為 0）
+// 處理分類項目點選及鍵盤觸發的上下按鈕。
 byId('category-picker').addEventListener('click', (event) => {
   const category = event.target.closest('[data-category]');
   const shift = event.target.closest('[data-shift]');
@@ -628,6 +704,7 @@ byId('category-picker').addEventListener('click', (event) => {
   else if (!shift || event.detail || !shiftCategory(direction)) return;
   rollWheel(event.currentTarget, direction);
 });
+// 處理產品功能點選及鍵盤觸發的上下按鈕。
 byId('production-list').addEventListener('click', (event) => {
   const production = event.target.closest('[data-production]');
   const shift = event.target.closest('[data-shift]');
@@ -636,21 +713,26 @@ byId('production-list').addEventListener('click', (event) => {
   else if (!shift || event.detail || !shiftProduction(direction)) return;
   rollWheel(event.currentTarget, direction);
 });
+// 更新個別項目及全選操作，並保存目前 Port 的勾選內容。
 byId('item-list').addEventListener('change', (event) => { if (event.target.matches('[data-item]')) { setItem(event.target.dataset.item, event.target.checked); refreshSelection(); } });
 byId('select-all').addEventListener('change', (event) => { visibleItems().forEach((item) => setItem(item, event.target.checked)); refreshSelection(); });
+// 依輸入內容篩選測試項目。
 byId('item-search').addEventListener('input', (event) => { state.query = event.target.value.trim(); renderItems(); });
+// 篩選分類；目前選項不在結果中時改選第一項。
 byId('category-search').addEventListener('input', (event) => {
   state.categoryQuery = event.target.value.trim();
   const visible = visibleCategories();
   if (visible.length && !visible.some(({ index }) => index === state.categoryIndex)) chooseCategory(visible[0].index);
   else renderCategories();
 });
+// 篩選產品功能；目前選項不在結果中時改選第一項。
 byId('production-search').addEventListener('input', (event) => {
   state.productionQuery = event.target.value.trim();
   const visible = visibleProductions();
   if (visible.length && !visible.some(({ index }) => index === state.productionIndex)) chooseProduction(visible[0].index);
   else renderProductions();
 });
+// 處理已選清單中的移除項目、清除 Port 及切換 Port 操作。
 byId('selected-list').addEventListener('click', (event) => {
   const remove = event.target.closest('[data-key]');
   const clear = event.target.closest('[data-clear-port]');
@@ -664,17 +746,20 @@ byId('selected-list').addEventListener('click', (event) => {
   }
   else if (port) choosePort(Number(port.dataset.port));
 });
+// 清除所有 Port 的勾選；影響多個 Port 時先要求確認。
 byId('clear-selection').addEventListener('click', () => {
   const affected = state.ports.filter((port) => port.selected.size).length;
   if (affected > 1 && !window.confirm(`確定清除 ${affected} 個 Port 的全部 ${totalSelected()} 個測試項目？`)) return;
   state.ports.forEach((port) => port.selected.clear());
   refreshSelection();
 });
+// 將所有 Port 的已選項目複製到剪貼簿，並顯示操作結果。
 byId('copy-selection').addEventListener('click', async () => {
   const text = state.ports.flatMap((port) => sortedSelection(port.selected).map(([, { category, production, item }]) => `${port.name}, ${category}, ${production}, ${item}`)).join('\n');
   try { await navigator.clipboard.writeText(text); byId('message').textContent = '已複製選取清單'; }
   catch { byId('message').textContent = '無法複製，請確認瀏覽器的剪貼簿權限。'; }
 });
+// 處理 Port 切換、新增、重新命名、複製與刪除操作。
 byId('port-bar').addEventListener('click', (event) => {
   const tab = event.target.closest('[data-port]');
   const action = event.target.closest('[data-port-action]')?.dataset.portAction;
@@ -683,6 +768,7 @@ byId('port-bar').addEventListener('click', (event) => {
   else if (action === 'duplicate') duplicatePort();
   else if (action === 'delete') deletePort();
 });
+// 綁定 Port 表單取消與兩處 Port 清單的拖曳排序。
 byId('port-cancel').addEventListener('click', closePortForm);
 enablePortDrag(byId('port-list'), '.port-tab', '.port-tab', false);
 enablePortDrag(byId('selected-list'), '.selected-group-name', '.selected-group', true);
@@ -690,7 +776,9 @@ window.addEventListener('pointermove', trackPortDrag);
 ['pointerup', 'pointercancel', 'blur'].forEach((type) => window.addEventListener(type, endPortDrag));
 // 拖曳放開後瀏覽器仍可能送出 click，避免被當成切換 Port
 window.addEventListener('click', (event) => { if (suppressPortClick) { suppressPortClick = false; event.stopPropagation(); event.preventDefault(); } }, true);
+// 修改 Port 名稱時清除先前的表單驗證錯誤。
 byId('port-name').addEventListener('input', (event) => event.target.setCustomValidity(''));
+// 驗證 Port 表單並依模式新增、批次新增或重新命名。
 byId('port-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const input = byId('port-name');
@@ -717,8 +805,10 @@ byId('port-form').addEventListener('submit', (event) => {
   closeFavoriteForm();
   refreshSelection(message);
 });
+// 開啟或取消最愛表單。
 byId('save-favorite').addEventListener('click', () => { byId('favorite-form').hidden = false; byId('favorite-name').focus(); });
 byId('favorite-cancel').addEventListener('click', closeFavoriteForm);
+// 以目前 Port 的選取內容新增或更新同名最愛。
 byId('favorite-form').addEventListener('submit', (event) => {
   event.preventDefault();
   const name = byId('favorite-name').value.trim();
@@ -730,6 +820,7 @@ byId('favorite-form').addEventListener('submit', (event) => {
   closeFavoriteForm();
   byId('message').textContent = `${existing < 0 ? '已存為' : '已更新'}我的最愛「${name}」（${favorite.items.length} 項）`;
 });
+// 處理最愛的套用與刪除操作。
 byId('favorite-list').addEventListener('click', (event) => {
   const apply = event.target.closest('[data-favorite]');
   const remove = event.target.closest('[data-remove-favorite]');
@@ -737,6 +828,7 @@ byId('favorite-list').addEventListener('click', (event) => {
   else if (remove) removeFavorite(Number(remove.dataset.removeFavorite));
 });
 
+/** 驗證並載入 data.js、最愛與 Port 設定，完成初始選取及畫面呈現。 */
 function loadData() {
   try {
     const data = window.GRL_DATA;
